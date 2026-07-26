@@ -21,22 +21,20 @@
     .screen { display: none; flex-direction: column; min-height: 100vh; }
     .screen.active { display: flex; }
 
-    /* Welcome */
-    #welcome-screen {
-      align-items: center; justify-content: center; padding: 40px 24px;
-      background: radial-gradient(ellipse at 50% 0%, #1e3a5f 0%, var(--bg) 60%);
-      text-align: center;
+    /* Empty state */
+    .empty-state {
+      display: flex; flex-direction: column; align-items: center; justify-content: center;
+      padding: 60px 32px; text-align: center; gap: 12px;
     }
-    .welcome-logo { font-size: 64px; margin-bottom: 12px; }
-    .welcome-title { font-size: 30px; font-weight: 700; margin-bottom: 8px; }
-    .welcome-sub { color: var(--muted); font-size: 15px; line-height: 1.6; margin-bottom: 40px; }
-    .welcome-btn {
-      display: inline-flex; align-items: center; justify-content: center; gap: 10px;
+    .empty-state-icon { font-size: 52px; margin-bottom: 4px; }
+    .empty-state-title { font-size: 20px; font-weight: 700; }
+    .empty-state-sub { color: var(--muted); font-size: 14px; line-height: 1.6; max-width: 260px; }
+    .empty-state-btn {
+      display: inline-flex; align-items: center; gap: 8px;
       background: var(--accent); color: #0f172a; border: none; border-radius: 14px;
-      padding: 16px 32px; font-size: 17px; font-weight: 700; cursor: pointer;
-      width: 100%; max-width: 300px;
+      padding: 14px 28px; font-size: 16px; font-weight: 700; cursor: pointer; margin-top: 8px;
     }
-    .welcome-note { margin-top: 16px; font-size: 12px; color: var(--muted); }
+    .empty-note { font-size: 12px; color: var(--muted); }
 
     /* Topbar */
     .topbar {
@@ -123,24 +121,115 @@
     .spinner { width: 36px; height: 36px; border: 3px solid var(--border); border-top-color: var(--accent); border-radius: 50%; animation: spin .8s linear infinite; }
     @keyframes spin { to { transform: rotate(360deg); } }
     .load-txt { color: var(--muted); font-size: 14px; }
+
+    /* Toast */
+    #toast {
+      position: fixed; bottom: 32px; left: 50%; transform: translateX(-50%) translateY(20px);
+      background: #1e293b; border: 1px solid var(--border); color: var(--text);
+      padding: 12px 20px; border-radius: 12px; font-size: 14px; font-weight: 500;
+      z-index: 1000; opacity: 0; transition: opacity .25s, transform .25s; pointer-events: none;
+      white-space: nowrap; box-shadow: 0 8px 24px rgba(0,0,0,0.4);
+    }
+    #toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+
+    /* Overlay backdrop */
+    .overlay-backdrop {
+      position: fixed; inset: 0; background: rgba(0,0,0,0.6);
+      z-index: 100; display: none; backdrop-filter: blur(2px);
+    }
+    .overlay-backdrop.open { display: block; }
+
+    /* Bottom sheet base */
+    .bottom-sheet {
+      position: fixed; bottom: 0; left: 0; right: 0;
+      background: var(--surface); border-radius: 20px 20px 0 0;
+      border-top: 1px solid var(--border);
+      z-index: 101; transform: translateY(100%);
+      transition: transform .3s cubic-bezier(.4,0,.2,1);
+      max-height: 85vh; overflow-y: auto; padding-bottom: env(safe-area-inset-bottom);
+    }
+    .bottom-sheet.open { transform: translateY(0); }
+    .sheet-handle { width: 36px; height: 4px; background: var(--border); border-radius: 2px; margin: 12px auto 0; }
+    .sheet-header { display: flex; align-items: center; justify-content: space-between; padding: 16px 20px; border-bottom: 1px solid var(--border); }
+    .sheet-title { font-size: 17px; font-weight: 700; }
+    .sheet-close { background: none; border: none; color: var(--muted); font-size: 22px; cursor: pointer; padding: 0 4px; line-height: 1; }
+
+    /* Category picker sheet */
+    #cat-picker .cat-pick-row {
+      display: flex; align-items: center; gap: 12px;
+      padding: 14px 20px; cursor: pointer; border-bottom: 1px solid var(--border);
+    }
+    #cat-picker .cat-pick-row:active { background: var(--surface2); }
+    #cat-picker .cat-pick-row:last-child { border-bottom: none; }
+    .cat-pick-ico { width: 38px; height: 38px; border-radius: 10px; display: flex; align-items: center; justify-content: center; font-size: 18px; flex-shrink: 0; }
+    .cat-pick-info { flex: 1; }
+    .cat-pick-name { font-size: 15px; font-weight: 600; }
+    .cat-pick-kw { font-size: 11px; color: var(--muted); margin-top: 2px; }
+    .cat-pick-check { color: var(--accent); font-size: 20px; }
+    .tx-desc-preview { padding: 12px 20px 0; font-size: 12px; color: var(--muted); }
+    .tx-desc-preview span { color: var(--text); font-weight: 500; }
+
+    /* Settings sheet */
+    #settings-sheet .settings-cat-block { border-bottom: 1px solid var(--border); padding: 16px 20px; }
+    #settings-sheet .settings-cat-block:last-child { border-bottom: none; }
+    .settings-cat-head { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
+    .settings-cat-label { font-size: 15px; font-weight: 600; flex: 1; }
+    .kw-tags { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 8px; }
+    .kw-tag {
+      display: inline-flex; align-items: center; gap: 5px;
+      background: var(--surface2); border: 1px solid var(--border);
+      border-radius: 20px; padding: 4px 10px; font-size: 12px;
+    }
+    .kw-tag.user-kw { border-color: var(--accent); color: var(--accent); }
+    .kw-tag-del { background: none; border: none; color: var(--muted); cursor: pointer; font-size: 14px; padding: 0; line-height: 1; }
+    .kw-tag.user-kw .kw-tag-del { color: var(--accent); }
+    .kw-add-row { display: flex; gap: 8px; margin-top: 6px; }
+    .kw-input {
+      flex: 1; background: var(--surface2); border: 1px solid var(--border);
+      border-radius: 10px; padding: 8px 12px; color: var(--text); font-size: 14px;
+      outline: none;
+    }
+    .kw-input:focus { border-color: var(--accent); }
+    .kw-add-btn {
+      background: var(--accent); color: #0f172a; border: none; border-radius: 10px;
+      padding: 8px 14px; font-size: 13px; font-weight: 700; cursor: pointer;
+    }
+
+    /* TX row tap highlight */
+    .tx-row { cursor: pointer; }
+    .tx-row:active { background: var(--surface2); }
   </style>
 </head>
 <body>
 
 <div id="loading"><div class="spinner"></div><div class="load-txt" id="load-txt">Laden…</div></div>
 <input type="file" id="csv-input" accept=".csv" />
+<div id="toast"></div>
+<div class="overlay-backdrop" id="backdrop" onclick="closeAllSheets()"></div>
 
-<!-- WELCOME -->
-<div id="welcome-screen" class="screen active">
-  <div class="welcome-logo">💰</div>
-  <div class="welcome-title">Finanzcheck</div>
-  <div class="welcome-sub">Lade dein Sparkasse- oder ZKB-CSV hoch und sieh sofort, wo dein Geld hingeht.</div>
-  <button class="welcome-btn" onclick="triggerUpload()">📂 CSV hochladen</button>
-  <p class="welcome-note">Alle Daten bleiben lokal auf deinem Gerät.</p>
+<!-- CATEGORY PICKER SHEET -->
+<div class="bottom-sheet" id="cat-picker">
+  <div class="sheet-handle"></div>
+  <div class="sheet-header">
+    <span class="sheet-title">Kategorie ändern</span>
+    <button class="sheet-close" onclick="closeAllSheets()">×</button>
+  </div>
+  <div class="tx-desc-preview" id="picker-desc-preview"></div>
+  <div id="cat-picker-list"></div>
+</div>
+
+<!-- SETTINGS SHEET -->
+<div class="bottom-sheet" id="settings-sheet">
+  <div class="sheet-handle"></div>
+  <div class="sheet-header">
+    <span class="sheet-title">⚙️ Einstellungen</span>
+    <button class="sheet-close" onclick="closeAllSheets()">×</button>
+  </div>
+  <div id="settings-content"></div>
 </div>
 
 <!-- DASHBOARD -->
-<div id="dashboard-screen" class="screen">
+<div id="dashboard-screen" class="screen active">
   <div class="topbar">
     <div class="topbar-left">
       <span style="font-size:22px">💰</span>
@@ -148,6 +237,7 @@
     </div>
     <div class="topbar-actions">
       <button class="btn primary" onclick="triggerUpload()">📂 CSV</button>
+      <button class="btn" onclick="openSettings()" style="font-size:16px;padding:7px 10px">⚙️</button>
       <button class="btn danger" onclick="clearData()">🗑</button>
     </div>
   </div>
@@ -176,19 +266,29 @@
 
   <div class="divider"></div>
 
-  <div class="sec">
-    <div class="upload-zone" onclick="triggerUpload()">
-      <div class="up-icon">📄</div>
-      <div class="up-text">Weiteres CSV hochladen</div>
-      <div class="up-sub">Sparkasse & ZKB werden erkannt</div>
-    </div>
+  <div id="empty-state-wrap" class="empty-state" style="display:none">
+    <div class="empty-state-icon">💰</div>
+    <div class="empty-state-title">Willkommen bei Finanzcheck</div>
+    <div class="empty-state-sub">Lade dein Sparkasse- oder ZKB-CSV hoch und sieh sofort, wo dein Geld hingeht.</div>
+    <button class="empty-state-btn" onclick="triggerUpload()">📂 CSV hochladen</button>
+    <p class="empty-note">Alle Daten bleiben lokal auf deinem Gerät.</p>
   </div>
 
-  <div class="sec">
-    <div class="sec-title">Buchungen</div>
-    <div class="tx-list" id="tx-list"></div>
+  <div id="data-content-wrap">
+    <div class="sec">
+      <div class="upload-zone" onclick="triggerUpload()">
+        <div class="up-icon">📄</div>
+        <div class="up-text">Weiteres CSV hochladen</div>
+        <div class="up-sub">Sparkasse & ZKB werden erkannt</div>
+      </div>
+    </div>
+
+    <div class="sec">
+      <div class="sec-title">Buchungen</div>
+      <div class="tx-list" id="tx-list"></div>
+    </div>
+    <div style="height:32px"></div>
   </div>
-  <div style="height:32px"></div>
 </div>
 
 <script>
@@ -204,13 +304,56 @@ const CATS = {
   sonstiges:    { label:"Sonstiges",    icon:"📦", color:"#94a3b8", kw:[] }
 };
 
+// ── Custom keywords (persisted in localStorage) ──
+// Structure: { lebensmittel: ["whole foods","bio company"], ... }
+function loadUserKws() {
+  try { return JSON.parse(localStorage.getItem("finanzcheck_kws") || "{}"); } catch { return {}; }
+}
+function saveUserKws(kws) {
+  localStorage.setItem("finanzcheck_kws", JSON.stringify(kws));
+}
+let userKws = loadUserKws();
+
+function allKwsForCat(catKey) {
+  return [...(CATS[catKey].kw || []), ...(userKws[catKey] || [])];
+}
+
+function addUserKw(catKey, kw) {
+  kw = kw.toLowerCase().trim();
+  if (!kw) return false;
+  if (!userKws[catKey]) userKws[catKey] = [];
+  if (userKws[catKey].includes(kw)) return false;
+  userKws[catKey].push(kw);
+  saveUserKws(userKws);
+  return true;
+}
+
+function removeUserKw(catKey, kw) {
+  if (!userKws[catKey]) return;
+  userKws[catKey] = userKws[catKey].filter(k => k !== kw);
+  saveUserKws(userKws);
+}
+
 function categorize(desc) {
   const l = (desc||"").toLowerCase();
+  // User keywords take priority
+  for (const [k] of Object.entries(CATS)) {
+    if (k==="sonstiges") continue;
+    if ((userKws[k]||[]).some(w => l.includes(w))) return k;
+  }
+  // Built-in keywords
   for (const [k,c] of Object.entries(CATS)) {
     if (k==="sonstiges") continue;
     if (c.kw.some(w => l.includes(w))) return k;
   }
   return "sonstiges";
+}
+
+// Extract best keyword from a description (first meaningful word 4+ chars)
+function extractKeyword(desc) {
+  if (!desc) return "";
+  const words = desc.toLowerCase().split(/[\s\-\/,\.]+/).filter(w => w.length >= 4);
+  return words[0] || desc.toLowerCase().slice(0,12).trim();
 }
 
 function parseDate(s) {
@@ -316,18 +459,141 @@ function mk(d){const dt=new Date(d);return dt.getFullYear()+"-"+String(dt.getMon
 function ml(k){const[y,m]=k.split("-");return MN[+m-1]+" "+y;}
 function chf(n){return(n<0?"−":"")+"CHF "+Math.abs(n).toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g,"'");}
 
-// ── State (in-memory only) ──
+let toastTimer;
+function showToast(msg) {
+  const t = document.getElementById("toast");
+  t.textContent = msg;
+  t.classList.add("show");
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(()=>t.classList.remove("show"), 2500);
+}
+
+// ── State ──
 let allTxs = [];
 let activeMonth = null;
 let activeCat = null;
+let pickerTxIndex = null; // which tx is being re-categorized
 
+// ── Sheets ──
+function openSheet(id) {
+  document.getElementById("backdrop").classList.add("open");
+  document.getElementById(id).classList.add("open");
+}
+function closeAllSheets() {
+  document.getElementById("backdrop").classList.remove("open");
+  document.querySelectorAll(".bottom-sheet").forEach(s=>s.classList.remove("open"));
+}
+
+// ── Category Picker ──
+function openCatPicker(txIdx) {
+  pickerTxIndex = txIdx;
+  const tx = allTxs[txIdx];
+  document.getElementById("picker-desc-preview").innerHTML =
+    `Buchung: <span>${(tx.description||"").slice(0,50)}</span>`;
+
+  document.getElementById("cat-picker-list").innerHTML = Object.entries(CATS).map(([k,c])=>`
+    <div class="cat-pick-row" onclick="pickCat('${k}')">
+      <div class="cat-pick-ico" style="background:${c.color}22;color:${c.color}">${c.icon}</div>
+      <div class="cat-pick-info">
+        <div class="cat-pick-name">${c.label}</div>
+        <div class="cat-pick-kw">${allKwsForCat(k).slice(0,4).join(", ")}${allKwsForCat(k).length>4?"…":""}</div>
+      </div>
+      ${tx.category===k ? '<span class="cat-pick-check">✓</span>' : ''}
+    </div>
+  `).join("");
+
+  openSheet("cat-picker");
+}
+
+function pickCat(newCat) {
+  if (pickerTxIndex === null) return;
+  const tx = allTxs[pickerTxIndex];
+  const oldCat = tx.category;
+  if (newCat === oldCat) { closeAllSheets(); return; }
+
+  // Save a keyword so future CSVs auto-classify correctly
+  const kw = extractKeyword(tx.description);
+  if (kw && newCat !== "sonstiges") {
+    addUserKw(newCat, kw);
+    // Remove from old category if it was a user keyword
+    if (userKws[oldCat]) removeUserKw(oldCat, kw);
+  }
+
+  // Re-categorize this transaction
+  tx.category = newCat;
+
+  closeAllSheets();
+  render();
+  const kwMsg = kw ? ` · „${kw}" gespeichert` : "";
+  showToast(`${CATS[newCat].icon} ${CATS[newCat].label}${kwMsg}`);
+}
+
+// ── Settings ──
+function openSettings() {
+  renderSettings();
+  openSheet("settings-sheet");
+}
+
+function renderSettings() {
+  document.getElementById("settings-content").innerHTML = Object.entries(CATS).map(([k,c])=>{
+    const builtIn = c.kw.slice(0,5).map(w=>`<span class="kw-tag">${w}</span>`).join("");
+    const moreBuiltIn = c.kw.length > 5 ? `<span class="kw-tag" style="color:var(--muted)">+${c.kw.length-5} mehr</span>` : "";
+    const userTags = (userKws[k]||[]).map(w=>
+      `<span class="kw-tag user-kw">${w}<button class="kw-tag-del" onclick="delKw('${k}','${w}')">×</button></span>`
+    ).join("");
+    const totalMatches = allTxs.filter(t => {
+      const l = (t.description||"").toLowerCase();
+      return (userKws[k]||[]).some(w => l.includes(w));
+    }).length;
+    const matchNote = (userKws[k]||[]).length > 0
+      ? `<span style="font-size:11px;color:var(--accent);margin-left:auto">${totalMatches} Buchungen</span>`
+      : "";
+    return `
+    <div class="settings-cat-block">
+      <div class="settings-cat-head">
+        <span style="font-size:20px">${c.icon}</span>
+        <span class="settings-cat-label">${c.label}</span>
+        ${matchNote}
+      </div>
+      <div class="kw-tags">${userTags}${builtIn}${moreBuiltIn}</div>
+      <div class="kw-add-row">
+        <input class="kw-input" id="kw-input-${k}" placeholder="Keyword hinzufügen…" onkeydown="if(event.key==='Enter')addKwFromInput('${k}')" />
+        <button class="kw-add-btn" onclick="addKwFromInput('${k}')">+</button>
+      </div>
+    </div>`;
+  }).join("");
+}
+
+function addKwFromInput(catKey) {
+  const input = document.getElementById("kw-input-"+catKey);
+  const kw = (input.value||"").trim().toLowerCase();
+  if (!kw) return;
+  if (addUserKw(catKey, kw)) {
+    input.value = "";
+    renderSettings();
+    showToast(`✅ „${kw}" zu ${CATS[catKey].label} hinzugefügt`);
+  } else {
+    showToast("⚠️ Keyword bereits vorhanden");
+  }
+}
+
+function delKw(catKey, kw) {
+  removeUserKw(catKey, kw);
+  renderSettings();
+  showToast(`🗑 „${kw}" entfernt`);
+}
+
+// ── Render ──
 function render() {
+  const hasData = allTxs.length > 0;
+  document.getElementById("empty-state-wrap").style.display = hasData ? "none" : "flex";
+  document.getElementById("data-content-wrap").style.display = hasData ? "block" : "none";
+
   const exp = allTxs.filter(t=>t.amount<0);
   const inc = allTxs.filter(t=>t.amount>0);
   const months = [...new Set(allTxs.map(t=>mk(t.date)))].sort().reverse();
   if (!activeMonth && months.length) activeMonth = months[0];
 
-  // Month pills
   document.getElementById("months").innerHTML = months.map(m=>
     `<button class="month-pill${m===activeMonth?" active":""}" onclick="selMonth('${m}')">${ml(m)}</button>`
   ).join("");
@@ -342,7 +608,6 @@ function render() {
   document.getElementById("c-bal").textContent = chf(totInc-totExp);
   document.getElementById("c-cnt").textContent = mExp.length+" Buchungen";
 
-  // Categories
   const byCat={};
   mExp.forEach(t=>{ byCat[t.category]=(byCat[t.category]||0)+Math.abs(t.amount); });
   const catData=Object.entries(byCat).map(([k,v])=>({
@@ -360,20 +625,20 @@ function render() {
     </div>`
   ).join("") || `<div style="color:var(--muted);font-size:13px;padding:6px">Keine Ausgaben</div>`;
 
-  // Bar chart
   const last6=months.slice(0,6).reverse();
   drawBar(document.getElementById("bar"),
     last6.map(m=>ml(m).split(" ")[0]),
     last6.map(m=>exp.filter(t=>mk(t.date)===m).reduce((s,t)=>s+Math.abs(t.amount),0))
   );
 
-  // TX list
   let list = activeCat ? mExp.filter(t=>t.category===activeCat) : mExp;
   list = [...list].sort((a,b)=>new Date(b.date)-new Date(a.date));
 
+  // Build index map so we can find tx in allTxs by reference
   document.getElementById("tx-list").innerHTML = list.slice(0,40).map(t=>{
     const c=CATS[t.category], d=new Date(t.date);
-    return `<div class="tx-row">
+    const idx = allTxs.indexOf(t);
+    return `<div class="tx-row" onclick="openCatPicker(${idx})">
       <div class="tx-ico" style="background:${c.color}22;color:${c.color}">${c.icon}</div>
       <div class="tx-info">
         <div class="tx-desc">${(t.description||"").slice(0,44)}${(t.description||"").length>44?"…":""}</div>
@@ -394,13 +659,11 @@ async function handleFile(file) {
   const text = await file.text();
   const newTxs = parseCSV(text);
   document.getElementById("loading").style.display="none";
-  if (!newTxs.length) { alert("Keine Buchungen gefunden.\nBitte Sparkasse- oder ZKB-CSV verwenden."); return; }
+  if (!newTxs.length) { showToast("⚠️ Keine Buchungen gefunden"); return; }
   allTxs = [...allTxs, ...newTxs];
   activeMonth=null; activeCat=null;
-  document.getElementById("welcome-screen").classList.remove("active");
-  document.getElementById("dashboard-screen").classList.add("active");
   render();
-  alert("✅ "+newTxs.length+" Buchungen importiert!");
+  showToast("✅ "+newTxs.length+" Buchungen importiert");
 }
 
 function triggerUpload(){ document.getElementById("csv-input").click(); }
@@ -408,14 +671,15 @@ function triggerUpload(){ document.getElementById("csv-input").click(); }
 function clearData(){
   if(!confirm("Alle Daten löschen?")) return;
   allTxs=[]; activeMonth=null; activeCat=null;
-  document.getElementById("dashboard-screen").classList.remove("active");
-  document.getElementById("welcome-screen").classList.add("active");
+  render();
 }
 
 document.getElementById("csv-input").addEventListener("change", async e=>{
   if(e.target.files[0]) await handleFile(e.target.files[0]);
   e.target.value="";
 });
+
+render();
 </script>
 </body>
 </html>
