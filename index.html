@@ -868,7 +868,21 @@ async function handleFile(file) {
   document.getElementById("loading").style.display="flex";
   document.getElementById("load-txt").textContent="Verarbeite CSV…";
   await new Promise(r=>setTimeout(r,30));
-  const text = await file.text();
+
+  // Read as ISO-8859-1 first, then try UTF-8 if no valid content found
+  let text;
+  try {
+    const buf = await file.arrayBuffer();
+    // Try ISO-8859-1 / Windows-1252 (common for German bank exports)
+    text = new TextDecoder("windows-1252").decode(buf);
+    // If it doesn't look like a valid CSV header, try UTF-8
+    if (!/auftragskonto|buchungsdatum|buchungstag/i.test(text.split("\n")[0])) {
+      text = new TextDecoder("utf-8").decode(buf);
+    }
+  } catch(e) {
+    text = await file.text();
+  }
+
   const newTxs = parseCSV(text);
   document.getElementById("loading").style.display="none";
   if (!newTxs.length) { showToast("⚠️ Keine Buchungen gefunden"); return; }
