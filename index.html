@@ -453,7 +453,7 @@ function parseCSV(text) {
   const header = lines[0];
   const sep = header.includes(";") ? ";" : ",";
   const isZKB = /buchungsdatum|valuta/i.test(header);
-  const isSPK = /auftragskonto|beguenstigter|glaeubiger/i.test(header);
+  const isSPK = /auftragskonto|beguenstigter|glaeubiger|verwendungszweck/i.test(header);
   const txs = [];
 
   for (let i=1; i<lines.length; i++) {
@@ -469,8 +469,10 @@ function parseCSV(text) {
       desc = (cols[5]||cols[4]||"").replace(/\s+/g," ").trim();
     } else if (isSPK) {
       date = parseDate(cols[1]);
-      desc = [cols[3],cols[4]].filter(Boolean).join(" – ").replace(/\s+/g," ").trim();
-      amount = parseFloat((cols[7]||"0").replace(/\./g,"").replace(",",".")) || 0;
+      // Verwendungszweck (col 4) + Beguenstigter (col 11) as description
+      desc = [cols[11], cols[4]].filter(Boolean).join(" – ").replace(/\s+/g," ").trim();
+      // Betrag is col 14 (O), German format: dot=thousands, comma=decimal
+      amount = parseFloat((cols[14]||"0").replace(/\./g,"").replace(",",".")) || 0;
     } else {
       date = parseDate(cols[0]);
       desc = cols[1]||"";
