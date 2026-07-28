@@ -246,10 +246,9 @@
 
 <!-- CATEGORY PICKER SHEET -->
 <div class="bottom-sheet" id="cat-picker">
-  <div class="sheet-handle"></div>
+  <div class="sheet-handle" style="cursor:pointer" onclick="closeAllSheets()"></div>
   <div class="sheet-header">
     <span class="sheet-title">Kategorie ändern</span>
-    <button class="sheet-close" onclick="closeAllSheets()">×</button>
   </div>
   <div class="tx-desc-preview" id="picker-desc-preview"></div>
   <div id="cat-picker-list"></div>
@@ -257,20 +256,18 @@
 
 <!-- SETTINGS SHEET -->
 <div class="bottom-sheet" id="settings-sheet">
-  <div class="sheet-handle"></div>
+  <div class="sheet-handle" style="cursor:pointer" onclick="closeAllSheets()"></div>
   <div class="sheet-header">
     <span class="sheet-title">⚙️ Einstellungen</span>
-    <button class="sheet-close" onclick="closeAllSheets()">×</button>
   </div>
   <div id="settings-content"></div>
 </div>
 
 <!-- NEW CATEGORY SHEET -->
 <div class="bottom-sheet" id="new-cat-sheet">
-  <div class="sheet-handle"></div>
+  <div class="sheet-handle" style="cursor:pointer" onclick="closeNewCat()"></div>
   <div class="sheet-header">
     <span class="sheet-title">Neue Kategorie</span>
-    <button class="sheet-close" onclick="closeNewCat()">×</button>
   </div>
   <div style="padding:20px;display:flex;flex-direction:column;gap:16px">
     <div>
@@ -329,31 +326,6 @@
     <div class="bar-wrap"><canvas id="bar" width="280" height="140" style="width:100%;height:auto"></canvas></div>
   </div>
 
-  <div class="divider"></div>
-
-  <div id="empty-state-wrap" class="empty-state" style="display:none">
-    <div class="empty-state-icon">💰</div>
-    <div class="empty-state-title">Willkommen bei Finanzcheck</div>
-    <div class="empty-state-sub">Lade dein Sparkasse- oder ZKB-CSV hoch und sieh sofort, wo dein Geld hingeht.</div>
-    <button class="empty-state-btn" onclick="triggerUpload()">📂 CSV hochladen</button>
-    <p class="empty-note">Alle Daten bleiben lokal auf deinem Gerät.</p>
-  </div>
-
-  <div id="data-content-wrap">
-    <div class="sec">
-      <div class="upload-zone" onclick="triggerUpload()">
-        <div class="up-icon">📄</div>
-        <div class="up-text">Weiteres CSV hochladen</div>
-        <div class="up-sub">Sparkasse & ZKB werden erkannt</div>
-      </div>
-    </div>
-
-    <div class="sec">
-      <div class="sec-title">Buchungen</div>
-      <div class="tx-list" id="tx-list"></div>
-    </div>
-    <div style="height:32px"></div>
-  </div>
 </div>
 
 <script>
@@ -799,8 +771,6 @@ function deleteUserCat(key) {
 // ── Render ──
 function render() {
   const hasData = allTxs.length > 0;
-  document.getElementById("empty-state-wrap").style.display = hasData ? "none" : "flex";
-  document.getElementById("data-content-wrap").style.display = hasData ? "block" : "none";
 
   const exp = allTxs.filter(t=>t.amount<0);
   const inc = allTxs.filter(t=>t.amount>0);
@@ -843,27 +813,10 @@ function render() {
     last6.map(m=>ml(m).split(" ")[0]),
     last6.map(m=>exp.filter(t=>mk(t.date)===m).reduce((s,t)=>s+Math.abs(t.amount),0))
   );
-
-  let list = activeCat ? mExp.filter(t=>t.category===activeCat) : mExp;
-  list = [...list].sort((a,b)=>new Date(b.date)-new Date(a.date));
-
-  // Build index map so we can find tx in allTxs by reference
-  document.getElementById("tx-list").innerHTML = list.slice(0,40).map(t=>{
-    const c=CATS[t.category], d=new Date(t.date);
-    const idx = allTxs.indexOf(t);
-    return `<div class="tx-row" onclick="openCatPicker(${idx})">
-      <div class="tx-ico" style="background:${c.color}22;color:${c.color}">${c.icon}</div>
-      <div class="tx-info">
-        <div class="tx-desc">${(t.description||"").slice(0,44)}${(t.description||"").length>44?"…":""}</div>
-        <div class="tx-meta">${d.getDate()}.${d.getMonth()+1}.${d.getFullYear()} · ${c.label}</div>
-      </div>
-      <div class="tx-amt ${t.amount<0?"neg":"pos"}">${chf(t.amount)}</div>
-    </div>`;
-  }).join("") || `<div class="empty">Keine Buchungen für diesen Monat.</div>`;
 }
 
 function selMonth(m){ activeMonth=m; activeCat=null; render(); }
-function selCat(k){ activeCat=activeCat===k?null:k; render(); document.getElementById("tx-list").scrollIntoView({behavior:"smooth"}); }
+function selCat(k){ activeCat=activeCat===k?null:k; render(); }
 
 async function handleFile(file) {
   document.getElementById("loading").style.display="flex";
@@ -976,6 +929,24 @@ document.getElementById("csv-input").addEventListener("change", async e=>{
   if(e.target.files[0]) await handleFile(e.target.files[0]);
   e.target.value="";
 });
+
+// ── Swipe down to close sheets ──
+function addSwipeToClose(sheetId, closeFn) {
+  const sheet = document.getElementById(sheetId);
+  let startY = 0, startT = 0;
+  sheet.addEventListener("touchstart", e => {
+    startY = e.touches[0].clientY;
+    startT = Date.now();
+  }, { passive: true });
+  sheet.addEventListener("touchend", e => {
+    const dy = e.changedTouches[0].clientY - startY;
+    const dt = Date.now() - startT;
+    if (dy > 60 || (dy > 30 && dt < 250)) closeFn();
+  }, { passive: true });
+}
+addSwipeToClose("cat-picker", closeAllSheets);
+addSwipeToClose("settings-sheet", closeAllSheets);
+addSwipeToClose("new-cat-sheet", closeNewCat);
 
 render();
 </script>
