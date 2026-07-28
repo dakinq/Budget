@@ -468,7 +468,7 @@ function parseCSV(text) {
     return result;
   }
 
-  const isZKB = /buchungsdatum|valuta/i.test(header);
+  const isZKB = /buchungsdatum/i.test(header);
   const isSPK = /auftragskonto|beguenstigter|glaeubiger|verwendungszweck/i.test(header);
   const txs = [];
 
@@ -894,7 +894,7 @@ async function handleFile(file) {
   const header = lines[0] || "";
 
   // Detect bank format
-  const isZKB = /buchungsdatum|valuta/i.test(header);
+  const isZKB = /buchungsdatum/i.test(header);
   const isSPK = /auftragskonto|beguenstigter|glaeubiger|verwendungszweck/i.test(header);
 
   if (!isZKB && !isSPK) {
