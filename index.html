@@ -23,8 +23,25 @@
       font-family: -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
       -webkit-font-smoothing: antialiased;
     }
-    .screen { display: none; flex-direction: column; min-height: 100vh; }
+    .screen { display: none; flex-direction: column; min-height: 100vh; padding-bottom: calc(60px + env(safe-area-inset-bottom)); }
     .screen.active { display: flex; }
+
+    /* Tab Bar */
+    .tab-bar {
+      position: fixed; bottom: 0; left: 0; right: 0; z-index: 50;
+      display: flex;
+      background: var(--surface);
+      border-top: 1px solid var(--border);
+      padding-bottom: env(safe-area-inset-bottom);
+    }
+    .tab-btn {
+      flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center;
+      gap: 3px; padding: 10px 0; cursor: pointer;
+      background: none; border: none; color: var(--muted); font-size: 10px; font-weight: 500;
+      transition: color .15s;
+    }
+    .tab-btn.active { color: var(--accent); }
+    .tab-btn-icon { font-size: 22px; line-height: 1; }
 
     /* Empty state */
     .empty-state {
@@ -322,10 +339,65 @@
   </div>
 
   <div class="sec">
-    <div class="sec-title">Monatsverlauf</div>
-    <div class="bar-wrap"><canvas id="bar" width="280" height="140" style="width:100%;height:auto"></canvas></div>
+    <div class="sec-title">Buchungen</div>
+    <div class="tx-list" id="tx-list"></div>
+  </div>
+  <div style="height:32px"></div>
+
+</div>
+
+<!-- PROGNOSE SCREEN -->
+<div id="prognose-screen" class="screen">
+  <div class="topbar">
+    <div class="topbar-left">
+      <span style="font-size:22px">📈</span>
+      <span class="app-title">Prognose</span>
+    </div>
+    <div class="topbar-actions">
+      <button class="btn primary" onclick="triggerUpload()">📂 CSV</button>
+      <button class="btn" onclick="openSettings()" style="font-size:16px;padding:7px 10px">⚙️</button>
+      <button class="btn danger" onclick="clearData()">🗑</button>
+    </div>
   </div>
 
+  <div id="prognose-content">
+    <div class="sec">
+      <div class="sec-title">Monatsverlauf — Ausgaben</div>
+      <div class="bar-wrap"><canvas id="bar-long" width="280" height="160" style="width:100%;height:auto"></canvas></div>
+    </div>
+
+    <div class="cards" id="prog-stats"></div>
+
+    <div class="sec">
+      <div class="sec-title">Ausgaben nach Kategorie — Verlauf</div>
+      <div id="cat-trend-list"></div>
+    </div>
+
+    <div class="sec">
+      <div class="sec-title">Nächster Monat — Prognose</div>
+      <div id="next-month-forecast"></div>
+    </div>
+
+    <div style="height:32px"></div>
+  </div>
+
+  <div id="prognose-empty" class="empty-state" style="display:none">
+    <div class="empty-state-icon">📈</div>
+    <div class="empty-state-title">Noch keine Daten</div>
+    <div class="empty-state-sub" style="color:var(--muted);font-size:14px;line-height:1.6;max-width:260px">Lade mindestens 2 Monate CSV-Daten um die Langzeitprognose zu sehen.</div>
+  </div>
+</div>
+
+<!-- TAB BAR -->
+<div class="tab-bar">
+  <button class="tab-btn active" id="tab-monat" onclick="switchTab('monat')">
+    <span class="tab-btn-icon">📊</span>
+    <span>Monatsansicht</span>
+  </button>
+  <button class="tab-btn" id="tab-prognose" onclick="switchTab('prognose')">
+    <span class="tab-btn-icon">📈</span>
+    <span>Prognose</span>
+  </button>
 </div>
 
 <script>
@@ -474,8 +546,14 @@ function parseCSV(text) {
 
 // ── Charts ──
 function drawPie(canvas, data) {
+  const dpr = window.devicePixelRatio || 1;
+  const rect = canvas.getBoundingClientRect();
+  canvas.width = rect.width * dpr;
+  canvas.height = rect.height * dpr;
   const ctx = canvas.getContext("2d");
-  const W=canvas.width, H=canvas.height;
+  ctx.scale(dpr, dpr);
+  const W = rect.width;
+  const H = rect.height;
   ctx.clearRect(0,0,W,H);
   const total = data.reduce((s,d)=>s+d.value,0);
   if (!total) return;
@@ -494,8 +572,14 @@ function drawPie(canvas, data) {
 }
 
 function drawBar(canvas, labels, values) {
+  const dpr = window.devicePixelRatio || 1;
+  const rect = canvas.getBoundingClientRect();
+  canvas.width = rect.width * dpr;
+  canvas.height = rect.height * dpr;
   const ctx = canvas.getContext("2d");
-  const W=canvas.width, H=canvas.height;
+  ctx.scale(dpr, dpr);
+  const W = rect.width;
+  const H = rect.height;
   ctx.clearRect(0,0,W,H);
   const p={t:18,r:6,b:32,l:38};
   const cW=W-p.l-p.r, cH=H-p.t-p.b;
@@ -808,11 +892,21 @@ function render() {
     </div>`
   ).join("") || `<div style="color:var(--muted);font-size:13px;padding:6px">Keine Ausgaben</div>`;
 
-  const last6=months.slice(0,6).reverse();
-  drawBar(document.getElementById("bar"),
-    last6.map(m=>ml(m).split(" ")[0]),
-    last6.map(m=>exp.filter(t=>mk(t.date)===m).reduce((s,t)=>s+Math.abs(t.amount),0))
-  );
+  let list = activeCat ? mExp.filter(t=>t.category===activeCat) : mExp;
+  list = [...list].sort((a,b)=>new Date(b.date)-new Date(a.date));
+
+  document.getElementById("tx-list").innerHTML = list.slice(0,40).map(t=>{
+    const c=CATS[t.category], d=new Date(t.date);
+    const idx = allTxs.indexOf(t);
+    return `<div class="tx-row" onclick="openCatPicker(${idx})">
+      <div class="tx-ico" style="background:${c.color}22;color:${c.color}">${c.icon}</div>
+      <div class="tx-info">
+        <div class="tx-desc">${(t.description||"").slice(0,44)}${(t.description||"").length>44?"…":""}</div>
+        <div class="tx-meta">${d.getDate()}.${d.getMonth()+1}.${d.getFullYear()} · ${c.label}</div>
+      </div>
+      <div class="tx-amt ${t.amount<0?"neg":"pos"}">${chf(t.amount)}</div>
+    </div>`;
+  }).join("") || `<div class="empty">Keine Buchungen für diesen Monat.</div>`;
 }
 
 function selMonth(m){ activeMonth=m; activeCat=null; render(); }
@@ -930,7 +1024,103 @@ document.getElementById("csv-input").addEventListener("change", async e=>{
   e.target.value="";
 });
 
-// ── Swipe down to close sheets ──
+// ── Tab switching ──
+let activeTab = "monat";
+function switchTab(tab) {
+  activeTab = tab;
+  document.getElementById("dashboard-screen").classList.toggle("active", tab==="monat");
+  document.getElementById("prognose-screen").classList.toggle("active", tab==="prognose");
+  document.getElementById("tab-monat").classList.toggle("active", tab==="monat");
+  document.getElementById("tab-prognose").classList.toggle("active", tab==="prognose");
+  if (tab==="prognose") renderPrognose();
+}
+
+// ── Prognose ──
+function renderPrognose() {
+  const months = [...new Set(allTxs.map(t=>mk(t.date)))].sort();
+  const hasEnough = months.length >= 2;
+  document.getElementById("prognose-content").style.display = hasEnough ? "block" : "none";
+  document.getElementById("prognose-empty").style.display = hasEnough ? "none" : "flex";
+  if (!hasEnough) return;
+
+  const exp = allTxs.filter(t=>t.amount<0);
+  const inc = allTxs.filter(t=>t.amount>0);
+
+  // Monthly totals
+  const monthExp = months.map(m => exp.filter(t=>mk(t.date)===m).reduce((s,t)=>s+Math.abs(t.amount),0));
+  const monthInc = months.map(m => inc.filter(t=>mk(t.date)===m).reduce((s,t)=>s+t.amount,0));
+
+  // Long bar chart
+  const barCanvas = document.getElementById("bar-long");
+  drawBar(barCanvas, months.map(m=>ml(m).split(" ")[0]), monthExp);
+
+  // Stats
+  const avg = monthExp.reduce((s,v)=>s+v,0) / monthExp.length;
+  const avgInc = monthInc.reduce((s,v)=>s+v,0) / monthInc.length;
+  const trend = monthExp.length >= 2 ? monthExp[monthExp.length-1] - monthExp[monthExp.length-2] : 0;
+  const savingsRate = avgInc > 0 ? ((avgInc - avg) / avgInc * 100).toFixed(0) : "—";
+
+  document.getElementById("prog-stats").innerHTML = `
+    <div class="card"><div class="card-label">Ø Ausgaben/Monat</div><div class="card-val red">${chf(-avg)}</div></div>
+    <div class="card"><div class="card-label">Ø Einnahmen/Monat</div><div class="card-val green">${chf(avgInc)}</div></div>
+    <div class="card"><div class="card-label">Trend zum Vormonat</div><div class="card-val ${trend>0?"red":"green"}">${trend>0?"+":""}${chf(-trend)}</div></div>
+    <div class="card"><div class="card-label">Sparquote</div><div class="card-val blue">${savingsRate}%</div></div>
+  `;
+
+  // Category trend — top 5 cats with spending per month
+  const topCats = Object.keys(CATS).map(k=>({
+    key:k,
+    total: exp.filter(t=>t.category===k).reduce((s,t)=>s+Math.abs(t.amount),0)
+  })).sort((a,b)=>b.total-a.total).slice(0,5).filter(c=>c.total>0);
+
+  document.getElementById("cat-trend-list").innerHTML = topCats.map(({key})=>{
+    const c = CATS[key];
+    const vals = months.map(m => exp.filter(t=>mk(t.date)===m&&t.category===key).reduce((s,t)=>s+Math.abs(t.amount),0));
+    const catAvg = vals.reduce((s,v)=>s+v,0)/vals.length;
+    const catTrend = vals.length>=2 ? vals[vals.length-1]-vals[vals.length-2] : 0;
+    return `<div style="padding:12px 16px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:12px">
+      <div style="width:36px;height:36px;border-radius:10px;background:${c.color}22;color:${c.color};display:flex;align-items:center;justify-content:center;font-size:18px;flex-shrink:0">${c.icon}</div>
+      <div style="flex:1">
+        <div style="font-size:14px;font-weight:600">${c.label}</div>
+        <div style="font-size:12px;color:var(--muted)">Ø ${chf(-catAvg)}/Monat</div>
+      </div>
+      <div style="text-align:right">
+        <div style="font-size:13px;font-weight:600;color:${catTrend>0?"var(--red)":"var(--green)"}">${catTrend>0?"▲":"▼"} ${chf(-Math.abs(catTrend))}</div>
+        <div style="font-size:11px;color:var(--muted)">vs. Vormonat</div>
+      </div>
+    </div>`;
+  }).join("");
+
+  // Next month forecast — simple linear projection
+  const forecastExp = monthExp.length >= 3
+    ? monthExp.slice(-3).reduce((s,v)=>s+v,0) / 3
+    : avg;
+  const forecastInc = monthInc.length >= 3
+    ? monthInc.slice(-3).reduce((s,v)=>s+v,0) / 3
+    : avgInc;
+  const forecastBal = forecastInc - forecastExp;
+
+  document.getElementById("next-month-forecast").innerHTML = `
+    <div style="background:var(--surface);border:1px solid var(--border);border-radius:16px;padding:16px;margin:0 16px">
+      <div style="font-size:12px;color:var(--muted);margin-bottom:12px">Basierend auf den letzten ${Math.min(monthExp.length,3)} Monaten</div>
+      <div style="display:flex;flex-direction:column;gap:10px">
+        <div style="display:flex;justify-content:space-between;align-items:center">
+          <span style="color:var(--muted);font-size:14px">Erwartete Ausgaben</span>
+          <span style="color:var(--red);font-weight:700">${chf(-forecastExp)}</span>
+        </div>
+        <div style="display:flex;justify-content:space-between;align-items:center">
+          <span style="color:var(--muted);font-size:14px">Erwartete Einnahmen</span>
+          <span style="color:var(--green);font-weight:700">${chf(forecastInc)}</span>
+        </div>
+        <div style="height:1px;background:var(--border)"></div>
+        <div style="display:flex;justify-content:space-between;align-items:center">
+          <span style="font-size:15px;font-weight:700">Erwartete Bilanz</span>
+          <span style="color:${forecastBal>=0?"var(--green)":"var(--red)"};font-weight:700;font-size:18px">${chf(forecastBal)}</span>
+        </div>
+      </div>
+    </div>
+  `;
+}
 function addSwipeToClose(sheetId, closeFn) {
   const sheet = document.getElementById(sheetId);
   let startY = 0, startT = 0;
