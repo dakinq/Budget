@@ -25,13 +25,13 @@
     /* ── Swipeable Tab Container ── */
     .tabs-wrapper {
       position: fixed; inset: 0;
-      display: flex; flex-direction: column;
       overflow: hidden;
     }
     .tabs-slider {
       display: flex;
-      flex: 1;
-      overflow: hidden;
+      position: absolute;
+      top: 0; left: 0; right: 0;
+      bottom: calc(48px + env(safe-area-inset-bottom));
       transition: transform .35s cubic-bezier(.4,0,.2,1);
       will-change: transform;
     }
@@ -41,45 +41,47 @@
       height: 100%;
       overflow-y: auto;
       -webkit-overflow-scrolling: touch;
-      padding-bottom: calc(60px + env(safe-area-inset-bottom));
+      padding-bottom: 16px;
     }
     .screen::-webkit-scrollbar { display: none; }
 
     /* Tab Bar */
     .tab-bar {
-      flex-shrink: 0;
+      position: fixed;
+      bottom: 0; left: 0; right: 0;
       display: flex;
       background: var(--surface);
       border-top: 1px solid var(--border);
       padding-bottom: env(safe-area-inset-bottom);
       z-index: 50;
+      height: calc(48px + env(safe-area-inset-bottom));
     }
     .tab-btn {
       flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center;
-      gap: 3px; padding: 10px 0; cursor: pointer;
-      background: none; border: none; color: var(--muted); font-size: 10px; font-weight: 500;
+      gap: 2px; padding: 6px 0; cursor: pointer;
+      background: none; border: none; color: var(--muted); font-size: 9px; font-weight: 500;
       transition: color .15s;
     }
     .tab-btn.active { color: var(--accent); }
-    .tab-btn-icon { font-size: 22px; line-height: 1; }
+    .tab-btn-icon { font-size: 18px; line-height: 1; }
 
     /* Account Switcher */
     .account-switcher {
-      display: flex; gap: 0; border-radius: 12px; overflow: hidden;
+      display: flex; gap: 0; border-radius: 10px; overflow: hidden;
       background: var(--surface2); border: 1px solid var(--border);
-      padding: 3px; margin: 10px 16px 4px;
+      padding: 2px; margin: 6px 16px 2px;
       position: sticky; top: 0; z-index: 5;
     }
     .account-btn {
-      flex: 1; padding: 8px 4px; font-size: 12px; font-weight: 600;
-      background: none; border: none; color: var(--muted); border-radius: 9px;
+      flex: 1; padding: 6px 4px; font-size: 11px; font-weight: 600;
+      background: none; border: none; color: var(--muted); border-radius: 8px;
       cursor: pointer; transition: all .2s; text-align: center; white-space: nowrap;
     }
     .account-btn.active {
       background: var(--accent); color: #0f172a;
       box-shadow: 0 2px 8px rgba(96,165,250,0.3);
     }
-    .account-btn span { display: block; font-size: 10px; opacity: 0.75; margin-top: 1px; font-weight: 400; }
+    .account-btn span { display: block; font-size: 9px; opacity: 0.75; margin-top: 1px; font-weight: 400; }
 
     /* Empty state */
     .empty-state {
@@ -171,7 +173,7 @@
 
     /* Toast */
     #toast {
-      position: fixed; bottom: calc(70px + env(safe-area-inset-bottom)); left: 50%; transform: translateX(-50%) translateY(20px);
+      position: fixed; bottom: calc(56px + env(safe-area-inset-bottom)); left: 50%; transform: translateX(-50%) translateY(20px);
       background: #1e293b; border: 1px solid var(--border); color: var(--text);
       padding: 12px 20px; border-radius: 12px; font-size: 14px; font-weight: 500;
       z-index: 1000; opacity: 0; transition: opacity .25s, transform .25s; pointer-events: none;
@@ -292,6 +294,16 @@
     <span class="sheet-title">⚙️ Einstellungen</span>
   </div>
   <div class="sheet-scroll-inner" id="settings-content"></div>
+</div>
+
+<!-- CATEGORY DETAIL SHEET -->
+<div class="bottom-sheet" id="cat-detail-sheet">
+  <div class="sheet-handle" style="cursor:pointer" onclick="closeAllSheets()"></div>
+  <div class="sheet-header">
+    <span class="sheet-title" id="cat-detail-title">Kategorie</span>
+    <button onclick="closeAllSheets()" style="background:none;border:none;color:var(--muted);font-size:22px;cursor:pointer;padding:0 4px">×</button>
+  </div>
+  <div class="sheet-scroll-inner" id="cat-detail-content"></div>
 </div>
 
 <!-- NEW CATEGORY SHEET -->
@@ -562,19 +574,27 @@ function parseCSV(text) {
 // activeAccount: 'all' | 'zkb' | 'spk'
 let activeAccount = "all";
 
+function loadExchangeRate() { return parseFloat(localStorage.getItem("finanzcheck_eurChf") || "0.95"); }
+function saveExchangeRate(r) { localStorage.setItem("finanzcheck_eurChf", String(r)); }
+let eurToChf = loadExchangeRate(); // e.g. 1 EUR = 0.95 CHF
+
 function currencyForAccount(acc) {
   if (acc === "spk") return "EUR";
-  return "CHF"; // ZKB or all (mixed → CHF as default)
+  return "CHF";
+}
+
+// Convert amount to CHF if needed (for "all accounts" view)
+function toChf(amount, bank) {
+  if (bank === "spk") return amount * eurToChf;
+  return amount;
 }
 
 function fmtAmount(n, bank) {
-  // Determine currency from bank tag on transaction, or fall back to account
   let currency;
   if (bank === "spk") currency = "EUR";
   else if (bank === "zkb") currency = "CHF";
   else currency = currencyForAccount(activeAccount);
 
-  const sym = currency === "EUR" ? "€" : "CHF";
   const abs = Math.abs(n).toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, "'");
   if (currency === "EUR") return (n < 0 ? "−" : "") + "€ " + abs;
   return (n < 0 ? "−" : "") + "CHF " + abs;
@@ -582,7 +602,6 @@ function fmtAmount(n, bank) {
 
 function fmtSummary(n, acc) {
   const currency = currencyForAccount(acc);
-  const sym = currency === "EUR" ? "€" : "CHF";
   const abs = Math.abs(n).toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, "'");
   if (currency === "EUR") return (n < 0 ? "−" : "") + "€ " + abs;
   return (n < 0 ? "−" : "") + "CHF " + abs;
@@ -656,7 +675,10 @@ function showToast(msg) {
 }
 
 // ── State ──
-let allTxs = [];
+function saveTxs() { try { localStorage.setItem("finanzcheck_txs", JSON.stringify(allTxs)); } catch(e) { console.warn("Speichern fehlgeschlagen:", e); } }
+function loadTxs() { try { return JSON.parse(localStorage.getItem("finanzcheck_txs") || "[]"); } catch { return []; } }
+
+let allTxs = loadTxs();
 let activeMonth = null;
 let activeCat = null;
 let pickerTxIndex = null;
@@ -770,6 +792,7 @@ function pickCat(newCat) {
     if (userKws[oldCat]) removeUserKw(oldCat, kw);
   }
   tx.category = newCat;
+  saveTxs();
   closeAllSheets(); render();
   const kwMsg = kw ? ` · „${kw}" gespeichert` : "";
   showToast(`${CATS[newCat].icon} ${CATS[newCat].label}${kwMsg}`);
@@ -779,6 +802,35 @@ function pickCat(newCat) {
 function openSettings() { renderSettings(); openSheet("settings-sheet"); }
 
 function renderSettings() {
+  const chfFromEur = (1 / eurToChf).toFixed(4);
+  const exchangeBlock = `
+    <div style="padding:16px 20px;border-bottom:1px solid var(--border)">
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">
+        <span style="font-size:18px">💱</span>
+        <span style="font-size:15px;font-weight:600">Wechselkurs EUR ↔ CHF</span>
+      </div>
+      <div style="font-size:12px;color:var(--muted);margin-bottom:10px">
+        Wird für die Gesamtansicht (alle Konten) verwendet. EUR-Beträge werden in CHF umgerechnet.
+      </div>
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
+        <span style="font-size:13px;color:var(--muted);white-space:nowrap">1 EUR =</span>
+        <input id="eur-chf-input" type="number" step="0.0001" min="0.5" max="2"
+          value="${eurToChf}"
+          style="flex:1;background:var(--surface2);border:1px solid var(--border);border-radius:10px;padding:8px 12px;color:var(--text);font-size:15px;outline:none;font-weight:600"
+          oninput="updateRatePreview()"
+          onfocus="this.style.borderColor='var(--accent)'"
+          onblur="this.style.borderColor='var(--border)'"
+        />
+        <span style="font-size:13px;color:var(--muted);white-space:nowrap">CHF</span>
+      </div>
+      <div id="rate-preview" style="font-size:12px;color:var(--muted);margin-bottom:10px">
+        → 1 CHF = ${chfFromEur} EUR
+      </div>
+      <button onclick="applyExchangeRate()" style="width:100%;background:var(--accent);color:#0f172a;border:none;border-radius:10px;padding:9px;font-size:14px;font-weight:700;cursor:pointer">
+        Kurs übernehmen
+      </button>
+    </div>`;
+
   const newCatBtn = `
     <div style="padding:16px 20px;border-bottom:1px solid var(--border)">
       <button onclick="openNewCat()" style="width:100%;background:var(--surface2);border:1px dashed var(--accent);color:var(--accent);border-radius:12px;padding:12px;font-size:15px;font-weight:600;cursor:pointer">
@@ -787,32 +839,126 @@ function renderSettings() {
     </div>`;
   const catBlocks = Object.entries(CATS).map(([k,c])=>{
     const isUser = !!c._user;
-    const builtIn = (c.kw||[]).slice(0,5).map(w=>`<span class="kw-tag">${w}</span>`).join("");
-    const moreBuiltIn = (c.kw||[]).length > 5 ? `<span class="kw-tag" style="color:var(--muted)">+${(c.kw||[]).length-5} mehr</span>` : "";
-    const userTags = (userKws[k]||[]).map(w=>
-      `<span class="kw-tag user-kw">${w}<button class="kw-tag-del" onclick="delKw('${k}','${w}')">×</button></span>`
-    ).join("");
-    const totalMatches = allTxs.filter(t => {
-      const l = (t.description||"").toLowerCase();
-      return (userKws[k]||[]).some(w => l.includes(w));
-    }).length;
-    const matchNote = (userKws[k]||[]).length > 0 ? `<span style="font-size:11px;color:var(--accent);margin-left:auto">${totalMatches} Buchungen</span>` : "";
-    const delBtn = isUser ? `<button class="settings-del-cat" onclick="deleteUserCat('${k}')" title="Kategorie löschen">🗑</button>` : "";
+    const myKwCount = (userKws[k]||[]).length;
+    const builtInCount = (c.kw||[]).length;
+    const txCount = allTxs.filter(t => t.category === k).length;
     return `
-    <div class="settings-cat-block">
-      <div class="settings-cat-head">
-        <span style="font-size:20px">${c.icon}</span>
-        <span class="settings-cat-label">${c.label}</span>
-        ${matchNote}${delBtn}
+    <div onclick="openCatDetail('${k}')" style="display:flex;align-items:center;gap:14px;padding:14px 20px;border-bottom:1px solid var(--border);cursor:pointer;active:background:var(--surface2)">
+      <div style="width:40px;height:40px;border-radius:12px;background:${c.color}22;color:${c.color};display:flex;align-items:center;justify-content:center;font-size:20px;flex-shrink:0">${c.icon}</div>
+      <div style="flex:1;min-width:0">
+        <div style="font-size:15px;font-weight:600">${c.label}</div>
+        <div style="font-size:12px;color:var(--muted);margin-top:2px">
+          ${builtInCount} eingebaut${myKwCount > 0 ? ` · <span style="color:var(--accent)">${myKwCount} eigene</span>` : ""}
+          ${txCount > 0 ? ` · ${txCount} Buchungen` : ""}
+        </div>
       </div>
-      <div class="kw-tags">${userTags}${builtIn}${moreBuiltIn}</div>
-      <div class="kw-add-row">
-        <input class="kw-input" id="kw-input-${k}" placeholder="Keyword hinzufügen…" onkeydown="if(event.key==='Enter')addKwFromInput('${k}')" />
-        <button class="kw-add-btn" onclick="addKwFromInput('${k}')">+</button>
-      </div>
+      <span style="color:var(--muted);font-size:18px">›</span>
     </div>`;
   }).join("");
-  document.getElementById("settings-content").innerHTML = newCatBtn + catBlocks;
+  document.getElementById("settings-content").innerHTML = exchangeBlock + newCatBtn + catBlocks;
+}
+
+function updateRatePreview() {
+  const val = parseFloat(document.getElementById("eur-chf-input").value);
+  if (!val || val <= 0) return;
+  document.getElementById("rate-preview").textContent = `→ 1 CHF = ${(1/val).toFixed(4)} EUR`;
+}
+
+function applyExchangeRate() {
+  const val = parseFloat(document.getElementById("eur-chf-input").value);
+  if (!val || val <= 0) { showToast("⚠️ Ungültiger Kurs"); return; }
+  eurToChf = val;
+  saveExchangeRate(val);
+  render();
+  if (activeTab === 1) renderPrognose();
+  showToast(`✅ Kurs: 1 EUR = ${val} CHF`);
+}
+
+function openCatDetail(catKey) {
+  const c = CATS[catKey];
+  if (!c) return;
+  const builtInKws = c.kw || [];
+  const myKws = userKws[catKey] || [];
+  const txCount = allTxs.filter(t => t.category === catKey).length;
+  const totalAmt = allTxs.filter(t => t.category === catKey && t.amount < 0)
+    .reduce((s,t) => s + Math.abs(t.amount), 0);
+
+  document.getElementById("cat-detail-title").innerHTML =
+    `<span style="margin-right:8px">${c.icon}</span>${c.label}`;
+
+  document.getElementById("cat-detail-content").innerHTML = `
+    <div style="padding:16px 20px;display:flex;gap:12px;border-bottom:1px solid var(--border)">
+      <div style="flex:1;background:var(--surface2);border-radius:12px;padding:12px;text-align:center">
+        <div style="font-size:11px;color:var(--muted);margin-bottom:4px">BUCHUNGEN</div>
+        <div style="font-size:20px;font-weight:700">${txCount}</div>
+      </div>
+      <div style="flex:1;background:var(--surface2);border-radius:12px;padding:12px;text-align:center">
+        <div style="font-size:11px;color:var(--muted);margin-bottom:4px">GESAMT</div>
+        <div style="font-size:16px;font-weight:700;color:var(--red)">−${totalAmt.toFixed(0)}</div>
+      </div>
+    </div>
+
+    ${myKws.length ? `
+    <div style="padding:16px 20px;border-bottom:1px solid var(--border)">
+      <div style="font-size:11px;color:var(--accent);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:10px;font-weight:600">🔧 Deine Keywords</div>
+      <div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px">
+        ${myKws.map(w => `
+          <span style="display:inline-flex;align-items:center;gap:5px;background:${c.color}22;border:1px solid ${c.color}66;color:${c.color};border-radius:20px;padding:5px 10px;font-size:13px;font-weight:600">
+            ${w}
+            <button onclick="delKwFromDetail('${catKey}','${w}')" style="background:none;border:none;color:${c.color};cursor:pointer;font-size:15px;padding:0;line-height:1;opacity:0.7">×</button>
+          </span>`).join("")}
+      </div>
+    </div>` : ""}
+
+    <div style="padding:16px 20px;border-bottom:1px solid var(--border)">
+      <div style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:10px;font-weight:600">Eingebaute Keywords</div>
+      <div style="display:flex;flex-wrap:wrap;gap:6px">
+        ${builtInKws.length
+          ? builtInKws.map(w => `<span style="background:var(--surface2);border:1px solid var(--border);border-radius:20px;padding:5px 10px;font-size:12px;color:var(--muted)">${w}</span>`).join("")
+          : `<span style="color:var(--muted);font-size:13px">Keine eingebauten Keywords</span>`}
+      </div>
+    </div>
+
+    <div style="padding:16px 20px">
+      <div style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:8px;font-weight:600">Keyword hinzufügen</div>
+      <div style="display:flex;gap:8px">
+        <input class="kw-input" id="cat-detail-kw-input" placeholder="Neues Keyword…"
+          onkeydown="if(event.key==='Enter')addKwFromDetail('${catKey}')"
+          style="flex:1;background:var(--surface2);border:1px solid var(--border);border-radius:10px;padding:9px 12px;color:var(--text);font-size:14px;outline:none"
+          onfocus="this.style.borderColor='var(--accent)'"
+          onblur="this.style.borderColor='var(--border)'"
+        />
+        <button onclick="addKwFromDetail('${catKey}')" style="background:var(--accent);color:#0f172a;border:none;border-radius:10px;padding:9px 14px;font-size:14px;font-weight:700;cursor:pointer">+</button>
+      </div>
+    </div>
+    ${c._user ? `
+    <div style="padding:0 20px 20px">
+      <button onclick="deleteUserCat('${catKey}')" style="width:100%;background:transparent;border:1px solid var(--red);color:var(--red);border-radius:10px;padding:10px;font-size:14px;font-weight:600;cursor:pointer">
+        🗑 Kategorie löschen
+      </button>
+    </div>` : ""}
+  `;
+
+  openSheet("cat-detail-sheet");
+}
+
+function addKwFromDetail(catKey) {
+  const input = document.getElementById("cat-detail-kw-input");
+  const kw = (input.value || "").trim().toLowerCase();
+  if (!kw) return;
+  if (addUserKw(catKey, kw)) {
+    input.value = "";
+    openCatDetail(catKey); // refresh
+    showToast(`✅ „${kw}" hinzugefügt`);
+  } else {
+    showToast("⚠️ Keyword bereits vorhanden");
+  }
+}
+
+function delKwFromDetail(catKey, kw) {
+  removeUserKw(catKey, kw);
+  openCatDetail(catKey); // refresh
+  showToast(`🗑 „${kw}" entfernt`);
 }
 
 function addKwFromInput(catKey) {
@@ -879,9 +1025,13 @@ function saveNewCat() {
 function deleteUserCat(key) {
   if (!confirm(`Kategorie „${CATS[key]?.label}" löschen? Buchungen werden zu Sonstiges verschoben.`)) return;
   allTxs.forEach(t => { if (t.category === key) t.category = "sonstiges"; });
+  saveTxs();
   delete userCats[key]; saveUserCats(userCats);
   delete userKws[key]; saveUserKws(userKws);
-  rebuildCats(); render(); renderSettings(); showToast("🗑 Kategorie gelöscht");
+  rebuildCats(); render();
+  closeAllSheets();
+  setTimeout(() => { renderSettings(); openSheet("settings-sheet"); }, 300);
+  showToast("🗑 Kategorie gelöscht");
 }
 
 // ── Update account switcher info ──
@@ -913,16 +1063,22 @@ function render() {
 
   const mExp = exp.filter(t=>mk(t.date)===activeMonth);
   const mInc = inc.filter(t=>mk(t.date)===activeMonth);
-  const totExp = mExp.reduce((s,t)=>s+Math.abs(t.amount),0);
-  const totInc = mInc.reduce((s,t)=>s+t.amount,0);
 
-  document.getElementById("c-exp").textContent = fmtSummary(-totExp, acc);
-  document.getElementById("c-inc").textContent = fmtSummary(totInc, acc);
-  document.getElementById("c-bal").textContent = fmtSummary(totInc-totExp, acc);
+  // When showing all accounts, convert EUR→CHF using the exchange rate
+  function normAmt(t) { return acc === "all" ? Math.abs(toChf(t.amount, t.bank)) : Math.abs(t.amount); }
+  function normAmtSigned(t) { return acc === "all" ? toChf(t.amount, t.bank) : t.amount; }
+
+  const totExp = mExp.reduce((s,t)=>s+normAmt(t),0);
+  const totInc = mInc.reduce((s,t)=>s+normAmtSigned(t),0);
+
+  const summaryLabel = acc === "all" ? " (CHF)" : "";
+  document.getElementById("c-exp").textContent = fmtSummary(-totExp, acc === "all" ? "zkb" : acc) + (acc === "all" ? " CHF" : "");
+  document.getElementById("c-inc").textContent = fmtSummary(totInc, acc === "all" ? "zkb" : acc) + (acc === "all" ? " CHF" : "");
+  document.getElementById("c-bal").textContent = fmtSummary(totInc-totExp, acc === "all" ? "zkb" : acc) + (acc === "all" ? " CHF" : "");
   document.getElementById("c-cnt").textContent = mExp.length+" Buchungen";
 
   const byCat={};
-  mExp.forEach(t=>{ byCat[t.category]=(byCat[t.category]||0)+Math.abs(t.amount); });
+  mExp.forEach(t=>{ byCat[t.category]=(byCat[t.category]||0)+normAmt(t); });
   const catData=Object.entries(byCat).map(([k,v])=>({
     key:k,label:CATS[k]?.label||k,icon:CATS[k]?.icon||"📦",color:CATS[k]?.color||"#94a3b8",value:v
   })).sort((a,b)=>b.value-a.value);
@@ -1057,6 +1213,7 @@ async function handleFile(file) {
   ).length;
 
   allTxs = [...allTxs, ...newTxs];
+  saveTxs();
   activeMonth=null; activeCat=null;
   render();
 
@@ -1086,6 +1243,7 @@ function triggerUpload(){ document.getElementById("csv-input").click(); }
 function clearData(){
   if(!confirm("Alle Daten löschen?")) return;
   allTxs=[]; activeMonth=null; activeCat=null; activeAccount="all";
+  saveTxs();
   setAccount("all");
   render();
 }
@@ -1192,6 +1350,7 @@ function addSwipeToClose(sheetId, closeFn) {
 addSwipeToClose("cat-picker", closeAllSheets);
 addSwipeToClose("settings-sheet", closeAllSheets);
 addSwipeToClose("new-cat-sheet", closeNewCat);
+addSwipeToClose("cat-detail-sheet", closeAllSheets);
 
 // ── Prognose ──
 function renderPrognose() {
@@ -1205,8 +1364,11 @@ function renderPrognose() {
 
   const exp = txs.filter(t=>t.amount<0);
   const inc = txs.filter(t=>t.amount>0);
-  const monthExp = months.map(m => exp.filter(t=>mk(t.date)===m).reduce((s,t)=>s+Math.abs(t.amount),0));
-  const monthInc = months.map(m => inc.filter(t=>mk(t.date)===m).reduce((s,t)=>s+t.amount,0));
+  function normE(t) { return acc === "all" ? Math.abs(toChf(t.amount, t.bank)) : Math.abs(t.amount); }
+  function normI(t) { return acc === "all" ? toChf(t.amount, t.bank) : t.amount; }
+  const monthExp = months.map(m => exp.filter(t=>mk(t.date)===m).reduce((s,t)=>s+normE(t),0));
+  const monthInc = months.map(m => inc.filter(t=>mk(t.date)===m).reduce((s,t)=>s+normI(t),0));
+  const summAcc = acc === "all" ? "zkb" : acc;
 
   const barCanvas = document.getElementById("bar-long");
   drawBar(barCanvas, months.map(m=>ml(m).split(" ")[0]), monthExp);
@@ -1217,9 +1379,9 @@ function renderPrognose() {
   const savingsRate = avgInc > 0 ? ((avgInc - avg) / avgInc * 100).toFixed(0) : "—";
 
   document.getElementById("prog-stats").innerHTML = `
-    <div class="card"><div class="card-label">Ø Ausgaben/Monat</div><div class="card-val red">${fmtSummary(-avg, acc)}</div></div>
-    <div class="card"><div class="card-label">Ø Einnahmen/Monat</div><div class="card-val green">${fmtSummary(avgInc, acc)}</div></div>
-    <div class="card"><div class="card-label">Trend zum Vormonat</div><div class="card-val ${trend>0?"red":"green"}">${trend>0?"+":""}${fmtSummary(-trend, acc)}</div></div>
+    <div class="card"><div class="card-label">Ø Ausgaben/Monat</div><div class="card-val red">${fmtSummary(-avg, summAcc)}</div></div>
+    <div class="card"><div class="card-label">Ø Einnahmen/Monat</div><div class="card-val green">${fmtSummary(avgInc, summAcc)}</div></div>
+    <div class="card"><div class="card-label">Trend zum Vormonat</div><div class="card-val ${trend>0?"red":"green"}">${trend>0?"+":""}${fmtSummary(-trend, summAcc)}</div></div>
     <div class="card"><div class="card-label">Sparquote</div><div class="card-val blue">${savingsRate}%</div></div>
   `;
 
@@ -1236,10 +1398,10 @@ function renderPrognose() {
       <div style="width:36px;height:36px;border-radius:10px;background:${c.color}22;color:${c.color};display:flex;align-items:center;justify-content:center;font-size:18px;flex-shrink:0">${c.icon}</div>
       <div style="flex:1">
         <div style="font-size:14px;font-weight:600">${c.label}</div>
-        <div style="font-size:12px;color:var(--muted)">Ø ${fmtSummary(-catAvg, acc)}/Monat</div>
+        <div style="font-size:12px;color:var(--muted)">Ø ${fmtSummary(-catAvg, summAcc)}/Monat</div>
       </div>
       <div style="text-align:right">
-        <div style="font-size:13px;font-weight:600;color:${catTrend>0?"var(--red)":"var(--green)"}">${catTrend>0?"▲":"▼"} ${fmtSummary(-Math.abs(catTrend), acc)}</div>
+        <div style="font-size:13px;font-weight:600;color:${catTrend>0?"var(--red)":"var(--green)"}">${catTrend>0?"▲":"▼"} ${fmtSummary(-Math.abs(catTrend), summAcc)}</div>
         <div style="font-size:11px;color:var(--muted)">vs. Vormonat</div>
       </div>
     </div>`;
@@ -1255,16 +1417,16 @@ function renderPrognose() {
       <div style="display:flex;flex-direction:column;gap:10px">
         <div style="display:flex;justify-content:space-between;align-items:center">
           <span style="color:var(--muted);font-size:14px">Erwartete Ausgaben</span>
-          <span style="color:var(--red);font-weight:700">${fmtSummary(-forecastExp, acc)}</span>
+          <span style="color:var(--red);font-weight:700">${fmtSummary(-forecastExp, summAcc)}</span>
         </div>
         <div style="display:flex;justify-content:space-between;align-items:center">
           <span style="color:var(--muted);font-size:14px">Erwartete Einnahmen</span>
-          <span style="color:var(--green);font-weight:700">${fmtSummary(forecastInc, acc)}</span>
+          <span style="color:var(--green);font-weight:700">${fmtSummary(forecastInc, summAcc)}</span>
         </div>
         <div style="height:1px;background:var(--border)"></div>
         <div style="display:flex;justify-content:space-between;align-items:center">
           <span style="font-size:15px;font-weight:700">Erwartete Bilanz</span>
-          <span style="color:${forecastBal>=0?"var(--green)":"var(--red)"};font-weight:700;font-size:18px">${fmtSummary(forecastBal, acc)}</span>
+          <span style="color:${forecastBal>=0?"var(--green)":"var(--red)"};font-weight:700;font-size:18px">${fmtSummary(forecastBal, summAcc)}</span>
         </div>
       </div>
     </div>
