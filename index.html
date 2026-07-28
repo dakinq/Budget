@@ -126,6 +126,7 @@
     }
     .spinner { width: 36px; height: 36px; border: 3px solid var(--border); border-top-color: var(--accent); border-radius: 50%; animation: spin .8s linear infinite; }
     @keyframes spin { to { transform: rotate(360deg); } }
+    @keyframes slideUp { from { transform: translateY(100%); } to { transform: translateY(0); } }
     .load-txt { color: var(--muted); font-size: 14px; }
 
     /* Toast */
@@ -869,27 +870,98 @@ async function handleFile(file) {
   document.getElementById("load-txt").textContent="Verarbeite CSV…";
   await new Promise(r=>setTimeout(r,30));
 
-  // Read as ISO-8859-1 first, then try UTF-8 if no valid content found
+  // Check file extension
+  if (!file.name.match(/\.(csv|CSV)$/)) {
+    document.getElementById("loading").style.display="none";
+    showErrorToast("❌ Falsches Format", `„${file.name}" ist keine CSV-Datei. Bitte eine .csv Datei von deiner Bank exportieren.`);
+    return;
+  }
+
   let text;
   try {
     const buf = await file.arrayBuffer();
-    // Try ISO-8859-1 / Windows-1252 (common for German bank exports)
     text = new TextDecoder("windows-1252").decode(buf);
-    // If it doesn't look like a valid CSV header, try UTF-8
     if (!/auftragskonto|buchungsdatum|buchungstag/i.test(text.split("\n")[0])) {
       text = new TextDecoder("utf-8").decode(buf);
     }
   } catch(e) {
-    text = await file.text();
+    document.getElementById("loading").style.display="none";
+    showErrorToast("❌ Datei konnte nicht gelesen werden", `Fehler: ${e.message}`);
+    return;
+  }
+
+  const lines = text.trim().split(/\r?\n/).filter(l => l.trim());
+  const header = lines[0] || "";
+
+  // Detect bank format
+  const isZKB = /buchungsdatum|valuta/i.test(header);
+  const isSPK = /auftragskonto|beguenstigter|glaeubiger|verwendungszweck/i.test(header);
+
+  if (!isZKB && !isSPK) {
+    document.getElementById("loading").style.display="none";
+    const cols = header.split(/[;,]/).length;
+    showErrorToast(
+      "❌ Bank nicht erkannt",
+      `Diese CSV wurde nicht als Sparkasse oder ZKB erkannt.\n\nGefundene Spalten: ${cols}\nErste Zeile: ${header.slice(0,80)}…\n\nBitte das CSV direkt aus dem Online-Banking exportieren.`
+    );
+    return;
   }
 
   const newTxs = parseCSV(text);
   document.getElementById("loading").style.display="none";
-  if (!newTxs.length) { showToast("⚠️ Keine Buchungen gefunden"); return; }
+
+  if (!newTxs.length) {
+    // Give specific reason why no transactions found
+    const dataLines = lines.slice(1).filter(l => l.trim()).length;
+    let reason = "";
+    if (dataLines === 0) {
+      reason = "Die Datei enthält nur die Kopfzeile, aber keine Buchungen.";
+    } else {
+      reason = `${dataLines} Zeilen gefunden, aber keine konnte als Buchung gelesen werden.\n\nMögliche Ursachen:\n• Datum-Format unbekannt\n• Betrag-Spalte leer oder falsch\n• Datei ist gefiltert / leer`;
+    }
+    showErrorToast("⚠️ Keine Buchungen gefunden", reason);
+    return;
+  }
+
+  const dupes = newTxs.filter(t =>
+    allTxs.some(e => e.date===t.date && e.amount===t.amount && e.description===t.description)
+  ).length;
+
   allTxs = [...allTxs, ...newTxs];
   activeMonth=null; activeCat=null;
   render();
-  showToast("✅ "+newTxs.length+" Buchungen importiert");
+
+  const bank = isZKB ? "ZKB" : "Sparkasse";
+  const dupeNote = dupes > 0 ? ` (${dupes} Duplikate übersprungen)` : "";
+  showToast(`✅ ${newTxs.length} Buchungen importiert · ${bank}${dupeNote}`);
+}
+
+function showErrorToast(title, detail) {
+  // Remove existing error if any
+  const existing = document.getElementById("error-modal");
+  if (existing) existing.remove();
+
+  const modal = document.createElement("div");
+  modal.id = "error-modal";
+  modal.style.cssText = `
+    position:fixed; inset:0; z-index:200; display:flex; align-items:flex-end;
+    background:rgba(0,0,0,0.7); backdrop-filter:blur(4px);
+  `;
+  modal.innerHTML = `
+    <div style="
+      background:#1e293b; border:1px solid #f87171; border-radius:20px 20px 0 0;
+      padding:24px 20px calc(24px + env(safe-area-inset-bottom)); width:100%;
+      animation: slideUp .25s ease;
+    ">
+      <div style="font-size:17px;font-weight:700;color:#f87171;margin-bottom:10px">${title}</div>
+      <div style="font-size:14px;color:#94a3b8;line-height:1.6;white-space:pre-wrap">${detail}</div>
+      <button onclick="document.getElementById('error-modal').remove()" style="
+        margin-top:20px; width:100%; background:#334155; border:none; border-radius:12px;
+        padding:13px; color:#f1f5f9; font-size:15px; font-weight:600; cursor:pointer;
+      ">Schliessen</button>
+    </div>`;
+  modal.onclick = e => { if(e.target===modal) modal.remove(); };
+  document.body.appendChild(modal);
 }
 
 function triggerUpload(){ document.getElementById("csv-input").click(); }
