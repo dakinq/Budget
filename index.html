@@ -692,21 +692,70 @@ function closeAllSheets() {
 }
 
 // ── Category Picker ──
+function findMatchingKeyword(desc, catKey) {
+  const l = (desc || "").toLowerCase();
+  const kws = allKwsForCat(catKey);
+  return kws.find(w => l.includes(w)) || null;
+}
+
 function openCatPicker(txIdx) {
   pickerTxIndex = txIdx;
   const tx = allTxs[txIdx];
-  document.getElementById("picker-desc-preview").innerHTML =
-    `Buchung: <span>${(tx.description||"").slice(0,50)}</span>`;
-  document.getElementById("cat-picker-list").innerHTML = Object.entries(CATS).map(([k,c])=>`
-    <div class="cat-pick-row" onclick="pickCat('${k}')">
+  const desc = tx.description || "";
+  const currentCat = tx.category;
+  const matchedKw = findMatchingKeyword(desc, currentCat);
+
+  // Build reason badge
+  let reasonHtml = "";
+  if (currentCat === "sonstiges") {
+    reasonHtml = `
+      <div style="margin:10px 16px 4px;padding:10px 12px;background:#94a3b822;border:1px solid #94a3b844;border-radius:10px;font-size:12px;line-height:1.5;color:var(--muted)">
+        <span style="font-size:14px">📦</span>
+        <strong style="color:var(--text)"> Kein Keyword gefunden</strong><br>
+        Kein bekanntes Keyword in der Buchung erkannt – deshalb „Sonstiges". Tippe auf eine Kategorie um sie zu ändern und das Keyword zu lernen.
+      </div>`;
+  } else if (matchedKw) {
+    const isUserKw = (userKws[currentCat]||[]).includes(matchedKw);
+    reasonHtml = `
+      <div style="margin:10px 16px 4px;padding:10px 12px;background:${CATS[currentCat]?.color}18;border:1px solid ${CATS[currentCat]?.color}44;border-radius:10px;font-size:12px;line-height:1.5">
+        <span style="font-size:14px">${CATS[currentCat]?.icon}</span>
+        <strong style="color:var(--text)"> Erkannt wegen:</strong>
+        <span style="display:inline-block;margin:4px 4px 0 0;background:${CATS[currentCat]?.color}33;color:${CATS[currentCat]?.color};border-radius:6px;padding:2px 8px;font-size:12px;font-weight:700">${matchedKw}</span>
+        ${isUserKw ? '<span style="font-size:10px;color:var(--accent);margin-left:4px">🔧 von dir gelernt</span>' : ''}
+      </div>`;
+  } else {
+    reasonHtml = `
+      <div style="margin:10px 16px 4px;padding:10px 12px;background:#60a5fa18;border:1px solid #60a5fa33;border-radius:10px;font-size:12px;line-height:1.5;color:var(--muted)">
+        <span style="font-size:14px">🏷️</span>
+        <strong style="color:var(--text)"> Manuell zugewiesen</strong>
+      </div>`;
+  }
+
+  document.getElementById("picker-desc-preview").innerHTML = `
+    <div style="padding:10px 16px 0;font-size:12px;color:var(--muted)">
+      Buchung: <span style="color:var(--text);font-weight:500">${desc.slice(0,60)}${desc.length>60?"…":""}</span>
+    </div>
+    ${reasonHtml}
+    <div style="padding:8px 16px 4px;font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:0.5px">Kategorie wechseln</div>
+  `;
+
+  document.getElementById("cat-picker-list").innerHTML = Object.entries(CATS).map(([k,c])=>{
+    const kw = findMatchingKeyword(desc, k);
+    const isCurrent = tx.category === k;
+    const kwBadge = kw
+      ? `<span style="font-size:10px;background:${c.color}22;color:${c.color};border-radius:5px;padding:2px 6px;margin-left:4px;font-weight:600">${kw}</span>`
+      : "";
+    return `
+    <div class="cat-pick-row" onclick="pickCat('${k}')" style="${isCurrent ? `background:${c.color}11;border-left:3px solid ${c.color};` : "border-left:3px solid transparent;"}">
       <div class="cat-pick-ico" style="background:${c.color}22;color:${c.color}">${c.icon}</div>
       <div class="cat-pick-info">
-        <div class="cat-pick-name">${c.label}</div>
+        <div class="cat-pick-name" style="${isCurrent ? `color:${c.color}` : ""}">${c.label}${kwBadge}</div>
         <div class="cat-pick-kw">${allKwsForCat(k).slice(0,4).join(", ")}${allKwsForCat(k).length>4?"…":""}</div>
       </div>
-      ${tx.category===k ? '<span class="cat-pick-check">✓</span>' : ''}
-    </div>
-  `).join("");
+      ${isCurrent ? `<span class="cat-pick-check" style="color:${c.color}">✓</span>` : ''}
+    </div>`;
+  }).join("");
+
   openSheet("cat-picker");
 }
 
@@ -892,7 +941,7 @@ function render() {
   let list = activeCat ? mExp.filter(t=>t.category===activeCat) : mExp;
   list = [...list].sort((a,b)=>new Date(b.date)-new Date(a.date));
 
-  document.getElementById("tx-list").innerHTML = list.slice(0,40).map(t=>{
+  function renderTxRow(t) {
     const c=CATS[t.category]||CATS.sonstiges, d=new Date(t.date);
     const idx = allTxs.indexOf(t);
     return `<div class="tx-row" onclick="openCatPicker(${idx})">
@@ -903,7 +952,59 @@ function render() {
       </div>
       <div class="tx-amt ${t.amount<0?"neg":"pos"}">${fmtAmount(t.amount, t.bank)}</div>
     </div>`;
-  }).join("") || `<div class="empty">Keine Buchungen für diesen Monat.</div>`;
+  }
+
+  if (activeCat) {
+    // If filtered by category, just show normally
+    document.getElementById("tx-list").innerHTML =
+      list.map(renderTxRow).join("") ||
+      `<div class="empty">Keine Buchungen in dieser Kategorie.</div>`;
+  } else {
+    // Split into categorized vs. uncategorized (= sonstiges without a keyword match)
+    const uncategorized = list.filter(t => {
+      if (t.category !== "sonstiges") return false;
+      // Check if any non-sonstiges category has a keyword match
+      return !Object.keys(CATS).some(k => k !== "sonstiges" && findMatchingKeyword(t.description, k));
+    });
+    const categorized = list.filter(t => !uncategorized.includes(t));
+
+    let html = "";
+
+    if (categorized.length) {
+      html += `
+        <div style="display:flex;align-items:center;gap:8px;padding:6px 2px 6px;margin-bottom:2px">
+          <span style="font-size:13px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:0.5px">Kategorisiert</span>
+          <span style="background:var(--green);color:#0f172a;border-radius:20px;padding:1px 8px;font-size:11px;font-weight:700">${categorized.length}</span>
+        </div>
+        ${categorized.map(renderTxRow).join("")}`;
+    }
+
+    if (uncategorized.length) {
+      html += `
+        <div style="display:flex;align-items:center;gap:8px;padding:${categorized.length ? "16px" : "6px"} 2px 6px;margin-bottom:2px">
+          <span style="font-size:13px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:0.5px">Nicht kategorisiert</span>
+          <span style="background:var(--red);color:#0f172a;border-radius:20px;padding:1px 8px;font-size:11px;font-weight:700">${uncategorized.length}</span>
+          <span style="font-size:11px;color:var(--muted);margin-left:auto">Tippen zum Zuweisen</span>
+        </div>
+        <div style="border:1px dashed #f8717144;border-radius:14px;overflow:hidden;background:#f8717108">
+          ${uncategorized.map(t => {
+            const c=CATS.sonstiges, d=new Date(t.date);
+            const idx = allTxs.indexOf(t);
+            return `<div class="tx-row" onclick="openCatPicker(${idx})" style="border-radius:0;border-bottom:1px solid #f8717122">
+              <div class="tx-ico" style="background:#f8717122;color:#f87171">❓</div>
+              <div class="tx-info">
+                <div class="tx-desc">${(t.description||"").slice(0,44)}${(t.description||"").length>44?"…":""}</div>
+                <div class="tx-meta">${d.getDate()}.${d.getMonth()+1}.${d.getFullYear()}${t.bank==="spk"?" · EUR":t.bank==="zkb"?" · CHF":""}</div>
+              </div>
+              <div class="tx-amt neg">${fmtAmount(t.amount, t.bank)}</div>
+            </div>`;
+          }).join("")}
+        </div>`;
+    }
+
+    document.getElementById("tx-list").innerHTML = html ||
+      `<div class="empty">Keine Buchungen für diesen Monat.</div>`;
+  }
 
   updateAccountSwitcherInfo();
 }
