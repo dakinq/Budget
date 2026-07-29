@@ -440,16 +440,38 @@ function loadUserKws() { try { return JSON.parse(localStorage.getItem("finanzche
 function saveUserKws(kws) { localStorage.setItem("finanzcheck_kws", JSON.stringify(kws)); }
 let userKws = loadUserKws();
 
-function allKwsForCat(catKey) { return [...(CATS[catKey]?.kw || []), ...(userKws[catKey] || [])]; }
+function loadRemovedKws() { try { return JSON.parse(localStorage.getItem("finanzcheck_removed_kws") || "{}"); } catch { return {}; } }
+function saveRemovedKws(r) { localStorage.setItem("finanzcheck_removed_kws", JSON.stringify(r)); }
+let removedKws = loadRemovedKws();
+
+function allKwsForCat(catKey) {
+  const removed = removedKws[catKey] || [];
+  const builtin = (CATS[catKey]?.kw || []).filter(w => !removed.includes(w));
+  return [...builtin, ...(userKws[catKey] || [])];
+}
 function addUserKw(catKey, kw) {
   kw = kw.toLowerCase().trim(); if (!kw) return false;
   if (!userKws[catKey]) userKws[catKey] = [];
   if (userKws[catKey].includes(kw)) return false;
+  // If it was previously removed from built-in, restore it instead
+  if ((removedKws[catKey] || []).includes(kw)) {
+    removedKws[catKey] = removedKws[catKey].filter(k => k !== kw);
+    saveRemovedKws(removedKws);
+    return true;
+  }
   userKws[catKey].push(kw); saveUserKws(userKws); return true;
 }
 function removeUserKw(catKey, kw) {
-  if (!userKws[catKey]) return;
-  userKws[catKey] = userKws[catKey].filter(k => k !== kw); saveUserKws(userKws);
+  const isBuiltIn = (CATS[catKey]?.kw || []).includes(kw);
+  if (isBuiltIn) {
+    if (!removedKws[catKey]) removedKws[catKey] = [];
+    if (!removedKws[catKey].includes(kw)) removedKws[catKey].push(kw);
+    saveRemovedKws(removedKws);
+  } else {
+    if (!userKws[catKey]) return;
+    userKws[catKey] = userKws[catKey].filter(k => k !== kw);
+    saveUserKws(userKws);
+  }
 }
 
 // ── Custom categories ──
@@ -849,9 +871,13 @@ function openCatDetail(catKey) {
   if (!c) return;
   const builtInKws = c.kw || [];
   const myKws = userKws[catKey] || [];
+  const removed = removedKws[catKey] || [];
   const txCount = allTxs.filter(t => t.category === catKey).length;
   const totalAmt = allTxs.filter(t => t.category === catKey && t.amount < 0)
     .reduce((s,t) => s + Math.abs(t.amount), 0);
+
+  const activeBuiltIn = builtInKws.filter(w => !removed.includes(w));
+  const allActive = [...activeBuiltIn, ...myKws];
 
   document.getElementById("cat-detail-title").innerHTML =
     `<span style="margin-right:8px">${c.icon}</span>${c.label}`;
@@ -868,25 +894,22 @@ function openCatDetail(catKey) {
       </div>
     </div>
 
-    ${myKws.length ? `
     <div style="padding:16px 20px;border-bottom:1px solid var(--border)">
-      <div style="font-size:11px;color:var(--accent);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:10px;font-weight:600">🔧 Deine Keywords</div>
-      <div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px">
-        ${myKws.map(w => `
-          <span style="display:inline-flex;align-items:center;gap:5px;background:${c.color}22;border:1px solid ${c.color}66;color:${c.color};border-radius:20px;padding:5px 10px;font-size:13px;font-weight:600">
-            ${w}
-            <button onclick="delKwFromDetail('${catKey}','${w}')" style="background:none;border:none;color:${c.color};cursor:pointer;font-size:15px;padding:0;line-height:1;opacity:0.7">×</button>
-          </span>`).join("")}
-      </div>
-    </div>` : ""}
-
-    <div style="padding:16px 20px;border-bottom:1px solid var(--border)">
-      <div style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:10px;font-weight:600">Eingebaute Keywords</div>
+      <div style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:10px;font-weight:600">Keywords</div>
       <div style="display:flex;flex-wrap:wrap;gap:6px">
-        ${builtInKws.length
-          ? builtInKws.map(w => `<span style="background:var(--surface2);border:1px solid var(--border);border-radius:20px;padding:5px 10px;font-size:12px;color:var(--muted)">${w}</span>`).join("")
-          : `<span style="color:var(--muted);font-size:13px">Keine eingebauten Keywords</span>`}
+        ${allActive.length ? allActive.map(w => {
+          const isBuiltIn = builtInKws.includes(w);
+          return `<span style="display:inline-flex;align-items:center;gap:5px;background:${c.color}22;border:1px solid ${c.color}66;color:${c.color};border-radius:20px;padding:5px 10px;font-size:13px;font-weight:600">
+            ${w}${isBuiltIn ? ' <span style="font-size:9px;opacity:0.6;font-weight:400">●</span>' : ''}
+            <button onclick="delKwFromDetail('${catKey}','${w}')" style="background:none;border:none;color:${c.color};cursor:pointer;font-size:16px;padding:0;line-height:1;opacity:0.6">×</button>
+          </span>`;
+        }).join("") : `<span style="color:var(--muted);font-size:13px">Keine Keywords</span>`}
+        ${removed.length ? removed.map(w => `
+          <span style="display:inline-flex;align-items:center;gap:5px;background:var(--surface2);border:1px dashed var(--border);color:var(--muted);border-radius:20px;padding:5px 10px;font-size:13px;text-decoration:line-through;opacity:0.5" title="Deaktiviert – tippen zum Wiederherstellen" onclick="restoreBuiltInKw('${catKey}','${w}')">
+            ${w}
+          </span>`).join("") : ""}
       </div>
+      <div style="font-size:11px;color:var(--muted);margin-top:8px">● = eingebaut &nbsp;·&nbsp; Durchgestrichen = deaktiviert (tippen zum Wiederherstellen)</div>
     </div>
 
     <div style="padding:16px 20px">
@@ -912,22 +935,51 @@ function openCatDetail(catKey) {
   openSheet("cat-detail-sheet");
 }
 
+function applyKeywordToCat(catKey, kw) {
+  // Re-categorize all transactions that contain the keyword and are currently "sonstiges" or uncategorized
+  let count = 0;
+  allTxs.forEach(t => {
+    const l = (t.description || "").toLowerCase();
+    if (l.includes(kw) && t.category !== catKey) {
+      t.category = catKey;
+      count++;
+    }
+  });
+  saveTxs();
+  render();
+  return count;
+}
+
 function addKwFromDetail(catKey) {
   const input = document.getElementById("cat-detail-kw-input");
   const kw = (input.value || "").trim().toLowerCase();
   if (!kw) return;
   if (addUserKw(catKey, kw)) {
+    const count = applyKeywordToCat(catKey, kw);
     input.value = "";
     openCatDetail(catKey); // refresh
-    showToast(`✅ „${kw}" hinzugefügt`);
+    if (count > 0) {
+      showToast(`✅ „${kw}" · ${count} Buchung${count !== 1 ? "en" : ""} neu kategorisiert`);
+    } else {
+      showToast(`✅ „${kw}" hinzugefügt`);
+    }
   } else {
     showToast("⚠️ Keyword bereits vorhanden");
   }
 }
 
+function restoreBuiltInKw(catKey, kw) {
+  if (!removedKws[catKey]) return;
+  removedKws[catKey] = removedKws[catKey].filter(k => k !== kw);
+  saveRemovedKws(removedKws);
+  const count = applyKeywordToCat(catKey, kw);
+  openCatDetail(catKey);
+  showToast(`✅ „${kw}" wiederhergestellt${count ? ` · ${count} Buchung${count!==1?"en":""} kategorisiert` : ""}`);
+}
+
 function delKwFromDetail(catKey, kw) {
   removeUserKw(catKey, kw);
-  openCatDetail(catKey); // refresh
+  openCatDetail(catKey);
   showToast(`🗑 „${kw}" entfernt`);
 }
 
