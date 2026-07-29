@@ -516,7 +516,7 @@ function parseDate(s) {
 function parseCSV(text) {
   const lines = text.trim().split(/\r?\n/);
   if (lines.length < 2) return [];
-  const header = lines[0];
+  const header = lines[0].replace(/^\uFEFF/, ""); // strip UTF-8 BOM if present
   const sep = header.includes(";") ? ";" : ",";
 
   function splitLine(line, sep) {
@@ -530,11 +530,17 @@ function parseCSV(text) {
     result.push(cur.trim()); return result;
   }
 
-  const isZKB = /buchungsdatum/i.test(header);
-  const isSPK = /auftragskonto|beguenstigter|glaeubiger|verwendungszweck/i.test(header);
+  const headerClean = header.replace(/^\uFEFF/, ""); // strip UTF-8 BOM
+  const isZKBde = /buchungsdatum/i.test(headerClean);
+  const isZKBen = /^date;booking text/i.test(headerClean);
+  const isZKB = isZKBde || isZKBen;
+  const isSPK = /auftragskonto|beguenstigter|glaeubiger|verwendungszweck/i.test(headerClean);
   // Determine bank for currency tagging
   const bank = isZKB ? "zkb" : (isSPK ? "spk" : "unknown");
 
+  // Build column index map for English ZKB format
+  // Header: Date;Booking text;Curr;Amount details;ZKB reference;Reference number;Debit CHF;Credit CHF;Value date;Balance CHF;Payment purpose;Details
+  //         0    1            2    3               4             5                6         7           8          9           10              11
   const txs = [];
   for (let i = 1; i < lines.length; i++) {
     if (!lines[i].trim()) continue;
@@ -542,7 +548,14 @@ function parseCSV(text) {
     if (cols.length < 3) continue;
     let date, amount, desc;
 
-    if (isZKB) {
+    if (isZKBen) {
+      // English ZKB export format
+      date = parseDate(cols[0]);
+      const deb = parseFloat((cols[6]||"0").replace(/['\s]/g,"").replace(",",".")) || 0;
+      const cre = parseFloat((cols[7]||"0").replace(/['\s]/g,"").replace(",",".")) || 0;
+      amount = cre > 0 ? cre : (deb > 0 ? -deb : 0);
+      desc = (cols[1]||"").replace(/\s+/g," ").trim();
+    } else if (isZKBde) {
       date = parseDate(cols[0]);
       const deb = parseFloat((cols[2]||"0").replace(/['\s]/g,"").replace(",",".")) || 0;
       const cre = parseFloat((cols[3]||"0").replace(/['\s]/g,"").replace(",",".")) || 0;
@@ -1188,9 +1201,14 @@ async function handleFile(file) {
   let text;
   try {
     const buf = await file.arrayBuffer();
-    text = new TextDecoder("windows-1252").decode(buf);
-    if (!/auftragskonto|buchungsdatum|buchungstag/i.test(text.split("\n")[0])) {
-      text = new TextDecoder("utf-8").decode(buf);
+    // Try UTF-8 first (handles BOM automatically via utf-8-sig-like check)
+    const utf8text = new TextDecoder("utf-8").decode(buf);
+    const firstLineUtf8 = utf8text.split("\n")[0].replace(/^\uFEFF/, "");
+    if (/auftragskonto|buchungsdatum|buchungstag|booking text/i.test(firstLineUtf8)) {
+      text = utf8text;
+    } else {
+      // Fall back to windows-1252 (Sparkasse German exports)
+      text = new TextDecoder("windows-1252").decode(buf);
     }
   } catch(e) {
     document.getElementById("loading").style.display="none";
@@ -1198,8 +1216,8 @@ async function handleFile(file) {
   }
 
   const lines = text.trim().split(/\r?\n/).filter(l => l.trim());
-  const header = lines[0] || "";
-  const isZKB = /buchungsdatum/i.test(header);
+  const header = (lines[0] || "").replace(/^\uFEFF/, ""); // strip BOM
+  const isZKB = /buchungsdatum/i.test(header) || /^date;booking text/i.test(header);
   const isSPK = /auftragskonto|beguenstigter|glaeubiger|verwendungszweck/i.test(header);
 
   if (!isZKB && !isSPK) {
