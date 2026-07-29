@@ -433,7 +433,8 @@ const CATS = {
   medizin:      { label:"Ärzte / Medizin", icon:"🏥", color:"#e879f9", kw:["apotheke","pharmacy","arzt","spital","klinik","zahnarzt","dentist","optiker","physiotherapie","krankenhaus","hospital","labor","praxis","notaufnahme","rezept"] },
   wohnen:       { label:"Wohnen",       icon:"🏠", color:"#fbbf24", kw:["miete","nebenkosten","strom","ewz","energie","gas","wasser","versicherung","zurich","allianz","axa","helvetia","sunrise","swisscom","salt","upc"] },
   freizeit:     { label:"Freizeit",     icon:"🎉", color:"#38bdf8", kw:["netflix","spotify","disney","steam","playstation","xbox","nintendo","kino","theater","konzert","booking","airbnb","hotel"] },
-  sonstiges:    { label:"Sonstiges",    icon:"📦", color:"#94a3b8", kw:[] }
+  sonstiges:       { label:"Sonstiges",         icon:"📦", color:"#94a3b8", kw:[] },
+  unkategorisiert: { label:"Nicht kategorisiert", icon:"❓", color:"#f87171", kw:[] }
 };
 
 // ── Custom keywords ──
@@ -487,14 +488,14 @@ rebuildCats();
 function categorize(desc) {
   const l = (desc||"").toLowerCase();
   for (const [k] of Object.entries(CATS)) {
-    if (k==="sonstiges") continue;
+    if (k==="sonstiges" || k==="unkategorisiert") continue;
     if ((userKws[k]||[]).some(w => l.includes(w))) return k;
   }
   for (const [k,c] of Object.entries(CATS)) {
-    if (k==="sonstiges") continue;
+    if (k==="sonstiges" || k==="unkategorisiert") continue;
     if ((c.kw||[]).some(w => l.includes(w))) return k;
   }
-  return "sonstiges";
+  return "unkategorisiert";
 }
 
 function extractKeyword(desc) {
@@ -681,6 +682,14 @@ let allTxs = loadTxs();
       const l = (t.description || "").toLowerCase();
       t.category = drogerieKws.some(w => l.includes(w)) ? "drogerie" : "medizin";
       changed = true;
+    }
+    // Move unmatched sonstiges to unkategorisiert (unless manually set)
+    if (t.category === "sonstiges" && !t.manual) {
+      const hasMatch = Object.keys(CATS).some(k => {
+        if (k === "sonstiges" || k === "unkategorisiert") return false;
+        return findMatchingKeyword(t.description, k);
+      });
+      if (!hasMatch) { t.category = "unkategorisiert"; changed = true; }
     }
   });
   if (changed) saveTxs();
@@ -951,11 +960,10 @@ function openCatDetail(catKey) {
 }
 
 function applyKeywordToCat(catKey, kw) {
-  // Re-categorize all transactions that contain the keyword and are currently "sonstiges" or uncategorized
   let count = 0;
   allTxs.forEach(t => {
     const l = (t.description || "").toLowerCase();
-    if (l.includes(kw) && t.category !== catKey) {
+    if (l.includes(kw) && t.category !== catKey && !t.manual) {
       t.category = catKey;
       count++;
     }
@@ -1148,55 +1156,17 @@ function render() {
   }
 
   if (activeCat) {
-    // If filtered by category, just show normally
     document.getElementById("tx-list").innerHTML =
       list.map(renderTxRow).join("") ||
       `<div class="empty">Keine Buchungen in dieser Kategorie.</div>`;
   } else {
-    // Split into categorized vs. uncategorized (= sonstiges without a keyword match)
-    const uncategorized = list.filter(t => {
-      if (t.manual) return false; // manually assigned = always categorized
-      if (t.category !== "sonstiges") return false;
-      return !Object.keys(CATS).some(k => k !== "sonstiges" && findMatchingKeyword(t.description, k));
-    });
-    const categorized = list.filter(t => !uncategorized.includes(t));
-
-    let html = "";
-
-    if (uncategorized.length) {
-      html += `
-        <div style="display:flex;align-items:center;gap:8px;padding:6px 2px 6px;margin-bottom:2px">
-          <span style="font-size:13px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:0.5px">Nicht kategorisiert</span>
-          <span style="background:var(--red);color:#0f172a;border-radius:20px;padding:1px 8px;font-size:11px;font-weight:700">${uncategorized.length}</span>
-          <span style="font-size:11px;color:var(--muted);margin-left:auto">Tippen zum Zuweisen</span>
-        </div>
-        <div style="border:1px dashed #f8717144;border-radius:14px;overflow:hidden;background:#f8717108">
-          ${uncategorized.map(t => {
-            const c=CATS.sonstiges, d=new Date(t.date);
-            const idx = allTxs.indexOf(t);
-            return `<div class="tx-row" onclick="openCatPicker(${idx})" style="border-radius:0;border-bottom:1px solid #f8717122">
-              <div class="tx-ico" style="background:#f8717122;color:#f87171">❓</div>
-              <div class="tx-info">
-                <div class="tx-desc">${(t.description||"").slice(0,44)}${(t.description||"").length>44?"…":""}</div>
-                <div class="tx-meta">${d.getDate()}.${d.getMonth()+1}.${d.getFullYear()}${t.bank==="spk"?" · EUR":t.bank==="zkb"?" · CHF":""}</div>
-              </div>
-              <div class="tx-amt neg">${fmtAmount(t.amount, t.bank)}</div>
-            </div>`;
-          }).join("")}
-        </div>`;
-    }
-
-    if (categorized.length) {
-      html += `
-        <div style="display:flex;align-items:center;gap:8px;padding:${uncategorized.length ? "16px" : "6px"} 2px 6px;margin-bottom:2px">
-          <span style="font-size:13px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:0.5px">Kategorisiert</span>
-          <span style="background:var(--green);color:#0f172a;border-radius:20px;padding:1px 8px;font-size:11px;font-weight:700">${categorized.length}</span>
-        </div>
-        ${categorized.map(renderTxRow).join("")}`;
-    }
-
-    document.getElementById("tx-list").innerHTML = html ||
-      `<div class="empty">Keine Buchungen für diesen Monat.</div>`;
+    const unkat = list.filter(t => t.category === "unkategorisiert");
+    const kat = list.filter(t => t.category !== "unkategorisiert");
+    const html = [
+      ...(unkat.length ? [unkat.map(renderTxRow).join("")] : []),
+      ...(kat.length ? [kat.map(renderTxRow).join("")] : [])
+    ].join("") || `<div class="empty">Keine Buchungen für diesen Monat.</div>`;
+    document.getElementById("tx-list").innerHTML = html;
   }
 
   updateAccountSwitcherInfo();
