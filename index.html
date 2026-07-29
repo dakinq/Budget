@@ -426,10 +426,11 @@
 // ── Kategorien ──
 const CATS = {
   lebensmittel: { label:"Lebensmittel", icon:"🛒", color:"#4ade80", kw:["migros","coop","aldi","lidl","spar","volg","denner","rewe","edeka","netto","penny","kaufland","bäckerei","bakery","metzg","supermarkt"] },
-  restaurant:   { label:"Restaurant",   icon:"🍽️", color:"#fb923c", kw:["restaurant","café","cafe","bar","pizza","kebab","sushi","mcdonald","burger king","kfc","starbucks","subway","gasthaus","takeaway","lieferando"] },
+  restaurant:   { label:"Restaurant",   icon:"🍽", color:"#fb923c", kw:["restaurant","café","cafe","bar","pizza","kebab","sushi","mcdonald","burger king","kfc","starbucks","subway","gasthaus","takeaway","lieferando"] },
   transport:    { label:"Transport",    icon:"🚗", color:"#60a5fa", kw:["sbb","zvv","bvg","db ag","deutsche bahn","tankstelle","shell","bp ","esso","parkhaus","parking","uber","taxi","flixbus","easyjet","ryanair","swiss"] },
-  shopping:     { label:"Shopping",     icon:"🛍️", color:"#c084fc", kw:["amazon","zalando","zara","h&m","ikea","digitec","galaxus","mediamarkt","saturn","globus","interdiscount","apple store","google play"] },
-  gesundheit:   { label:"Gesundheit",   icon:"💊", color:"#f472b6", kw:["apotheke","pharmacy","arzt","spital","klinik","zahnarzt","optiker","fitness","gym","drogerie","dm ","rossmann"] },
+  shopping:     { label:"Shopping",     icon:"🛍", color:"#c084fc", kw:["amazon","zalando","zara","h&m","ikea","digitec","galaxus","mediamarkt","saturn","globus","interdiscount","apple store","google play"] },
+  drogerie:     { label:"Drogerie",      icon:"🧴", color:"#f472b6", kw:["drogerie","dm ","rossmann","müller","budnikowsky","budni","parfümerie","douglas","friseur","hairdresser","kosmetik","beautysalon"] },
+  medizin:      { label:"Ärzte / Medizin", icon:"🏥", color:"#e879f9", kw:["apotheke","pharmacy","arzt","spital","klinik","zahnarzt","dentist","optiker","physiotherapie","krankenhaus","hospital","labor","praxis","notaufnahme","rezept"] },
   wohnen:       { label:"Wohnen",       icon:"🏠", color:"#fbbf24", kw:["miete","nebenkosten","strom","ewz","energie","gas","wasser","versicherung","zurich","allianz","axa","helvetia","sunrise","swisscom","salt","upc"] },
   freizeit:     { label:"Freizeit",     icon:"🎉", color:"#38bdf8", kw:["netflix","spotify","disney","steam","playstation","xbox","nintendo","kino","theater","konzert","booking","airbnb","hotel"] },
   sonstiges:    { label:"Sonstiges",    icon:"📦", color:"#94a3b8", kw:[] }
@@ -474,7 +475,6 @@ function removeUserKw(catKey, kw) {
   }
 }
 
-// ── Custom categories ──
 function loadUserCats() { try { return JSON.parse(localStorage.getItem("finanzcheck_cats") || "{}"); } catch { return {}; } }
 function saveUserCats(cats) { localStorage.setItem("finanzcheck_cats", JSON.stringify(cats)); }
 let userCats = loadUserCats();
@@ -671,6 +671,20 @@ function saveTxs() { try { localStorage.setItem("finanzcheck_txs", JSON.stringif
 function loadTxs() { try { return JSON.parse(localStorage.getItem("finanzcheck_txs") || "[]"); } catch { return []; } }
 
 let allTxs = loadTxs();
+
+// ── Migrate old categories ──
+(function() {
+  const drogerieKws = ["drogerie","dm ","rossmann","müller","budni","parfümerie","douglas","friseur","kosmetik"];
+  let changed = false;
+  allTxs.forEach(t => {
+    if (t.category === "gesundheit") {
+      const l = (t.description || "").toLowerCase();
+      t.category = drogerieKws.some(w => l.includes(w)) ? "drogerie" : "medizin";
+      changed = true;
+    }
+  });
+  if (changed) saveTxs();
+})();
 let activeMonth = null;
 let activeCat = null;
 let pickerTxIndex = null;
@@ -784,6 +798,7 @@ function pickCat(newCat) {
     if (userKws[oldCat]) removeUserKw(oldCat, kw);
   }
   tx.category = newCat;
+  tx.manual = true; // mark as manually categorized — never show as "uncategorized"
   saveTxs();
   closeAllSheets(); render();
   const kwMsg = kw ? ` · „${kw}" gespeichert` : "";
@@ -1140,8 +1155,8 @@ function render() {
   } else {
     // Split into categorized vs. uncategorized (= sonstiges without a keyword match)
     const uncategorized = list.filter(t => {
+      if (t.manual) return false; // manually assigned = always categorized
       if (t.category !== "sonstiges") return false;
-      // Check if any non-sonstiges category has a keyword match
       return !Object.keys(CATS).some(k => k !== "sonstiges" && findMatchingKeyword(t.description, k));
     });
     const categorized = list.filter(t => !uncategorized.includes(t));
