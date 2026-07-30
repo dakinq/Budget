@@ -448,6 +448,7 @@
         <div class="sec">
           <div class="sec-title">Monatsverlauf — Ausgaben</div>
           <div class="bar-wrap"><canvas id="bar-long" width="280" height="160" style="width:100%;height:auto"></canvas></div>
+          <div id="bar-legend" style="display:flex;flex-wrap:wrap;gap:6px 12px;padding:8px 4px 0"></div>
         </div>
         <div class="cards" id="prog-stats"></div>
         <div class="sec">
@@ -883,6 +884,62 @@ function drawBar(canvas, labels, values) {
     ctx.fillStyle="#94a3b8"; ctx.font="9px system-ui"; ctx.textAlign="center";
     ctx.fillText(labels[i], x+bW/2, H-p.b+11);
     if(v>0) ctx.fillText(v>999?(v/1000).toFixed(1)+"k":Math.round(v), x+bW/2, y-3);
+  });
+}
+
+function drawStackedBar(canvas, labels, catData, totals) {
+  // catData: [{color, values: [perMonth]}]
+  // totals: [sumPerMonth]
+  const dpr = window.devicePixelRatio || 1;
+  const rect = canvas.getBoundingClientRect();
+  canvas.width = rect.width * dpr; canvas.height = rect.height * dpr;
+  const ctx = canvas.getContext("2d"); ctx.scale(dpr, dpr);
+  const W = rect.width, H = rect.height;
+  ctx.clearRect(0, 0, W, H);
+  const p = { t: 18, r: 6, b: 32, l: 38 };
+  const cW = W - p.l - p.r, cH = H - p.t - p.b;
+  const max = Math.max(...totals, 1);
+  const gap = cW / Math.max(labels.length, 1);
+  const bW = gap * 0.55;
+
+  // Grid lines
+  for (let i = 0; i <= 4; i++) {
+    const y = p.t + cH - (cH / 4) * i;
+    ctx.strokeStyle = "#334155"; ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(p.l, y); ctx.lineTo(W - p.r, y); ctx.stroke();
+    ctx.fillStyle = "#64748b"; ctx.font = "9px system-ui"; ctx.textAlign = "right";
+    const v = Math.round(max / 4 * i);
+    ctx.fillText(v > 999 ? (v / 1000).toFixed(1) + "k" : v, p.l - 2, y + 3);
+  }
+
+  // Stacked bars per month
+  labels.forEach((label, i) => {
+    const x = p.l + gap * i + (gap - bW) / 2;
+    const total = totals[i];
+    const totalH = (total / max) * cH;
+    let curY = p.t + cH; // start from bottom
+
+    catData.forEach(cat => {
+      const v = cat.values[i] || 0;
+      if (v <= 0) return;
+      const segH = (v / max) * cH;
+      curY -= segH;
+      ctx.fillStyle = cat.color;
+      // Round top corners only on the topmost segment
+      const isTop = Math.abs(curY - (p.t + cH - totalH)) < 1.5;
+      if (isTop) {
+        ctx.beginPath(); ctx.roundRect(x, curY, bW, segH, [3, 3, 0, 0]); ctx.fill();
+      } else {
+        ctx.fillRect(x, curY, bW, segH);
+      }
+    });
+
+    // Total label above bar
+    ctx.fillStyle = "#94a3b8"; ctx.font = "9px system-ui"; ctx.textAlign = "center";
+    ctx.fillText(label, x + bW / 2, H - p.b + 11);
+    if (total > 0) {
+      ctx.fillText(total > 999 ? (total / 1000).toFixed(1) + "k" : Math.round(total), x + bW / 2, p.t + cH - totalH - 3);
+    }
   });
 }
 
@@ -1820,7 +1877,28 @@ function renderPrognose() {
   const summAcc = acc === "all" ? "zkb" : acc;
 
   const barCanvas = document.getElementById("bar-long");
-  drawBar(barCanvas, months.map(m=>ml(m).split(" ")[0]), monthExp);
+  // Build per-category data for stacked bar (top categories by total spend)
+  const allCatKeys = Object.keys({...CATS, ...userCats});
+  const catBarData = allCatKeys.map(k => {
+    const color = (CATS[k] || userCats[k] || {}).color || "#94a3b8";
+    const values = months.map(m =>
+      exp.filter(t => mk(t.date) === m && t.category === k).reduce((s, t) => s + normE(t), 0)
+    );
+    return { color, values };
+  }).filter(c => c.values.some(v => v > 0));
+  drawStackedBar(barCanvas, months.map(m => ml(m).split(" ")[0]), catBarData, monthExp);
+
+  // Legend — only show cats that appear in this data
+  const allCatsMap = {...CATS, ...userCats};
+  document.getElementById("bar-legend").innerHTML = catBarData.map(c => {
+    const catKey = allCatKeys.find(k => (allCatsMap[k] || {}).color === c.color);
+    if (!catKey) return "";
+    const cat = allCatsMap[catKey];
+    return `<div style="display:flex;align-items:center;gap:4px;font-size:11px;color:var(--muted)">
+      <span style="width:10px;height:10px;border-radius:3px;background:${cat.color};flex-shrink:0;display:inline-block"></span>
+      ${cat.icon} ${cat.label}
+    </div>`;
+  }).join("");
 
   const avg = monthExp.reduce((s,v)=>s+v,0) / monthExp.length;
   const avgInc = monthInc.reduce((s,v)=>s+v,0) / monthInc.length;
