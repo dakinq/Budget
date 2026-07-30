@@ -1,0 +1,18 @@
+{
+  "name": "Finanzcheck",
+  "short_name": "Finanzcheck",
+  "description": "Persönliche Budget-App",
+  "start_url": "./index.html",
+  "display": "standalone",
+  "background_color": "#0f172a",
+  "theme_color": "#0f172a",
+  "orientation": "portrait",
+  "icons": [
+    {
+      "src": "apple-touch-icon.png",
+      "sizes": "180x180",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}
