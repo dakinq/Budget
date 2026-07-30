@@ -544,7 +544,19 @@ function doLogout() {
 async function fsLoadAll() {
   const txSnap = await db.collection("shared").doc("data").collection("txs").get();
   const loaded = txSnap.docs.map(d => d.data());
-  if (loaded.length > 0) allTxs = loaded;
+  if (loaded.length > 0) {
+    // Merge ignored flags from localStorage in case Firestore save was incomplete
+    const localTxs = loadTxs();
+    loaded.forEach(function(t) {
+      const match = localTxs.find(function(l) {
+        return l.date === t.date && l.amount === t.amount && l.description === t.description;
+      });
+      if (match && match.ignored) t.ignored = true;
+    });
+    allTxs = loaded;
+    // Persist merged state back to localStorage
+    try { localStorage.setItem("finanzcheck_txs", JSON.stringify(allTxs)); } catch(e) {}
+  }
   const settSnap = await db.collection("shared").doc("data").collection("settings").doc("config").get();
   if (settSnap.exists) {
     const s = settSnap.data();
@@ -783,13 +795,13 @@ function parseCSV(text) {
         txs.push({ date: row.date, amount: row.amount, description: row.desc, category: categorize(row.desc), bank: bank, _zkbRef: row.zkbRef });
       }
     }
-    // Strip internal dedup field
-    txs = txs.map(function(t) { return { date: t.date, amount: t.amount, description: t.description, category: t.category, bank: t.bank }; });
+    // Strip internal dedup field — always include ignored: false explicitly
+    txs = txs.map(function(t) { return { date: t.date, amount: t.amount, description: t.description, category: t.category, bank: t.bank, ignored: false }; });
     return { txs: txs, skipped: skipped, dedupCount: dedupCount };
   }
 
   txs = rawRows.map(function(row) {
-    return { date: row.date, amount: row.amount, description: row.desc, category: categorize(row.desc), bank: bank };
+    return { date: row.date, amount: row.amount, description: row.desc, category: categorize(row.desc), bank: bank, ignored: false };
   });
   return { txs: txs, skipped: skipped, dedupCount: 0 };
 }
