@@ -265,6 +265,7 @@
     <span class="sheet-title">Kategorie ändern</span>
   </div>
   <div class="tx-desc-preview" id="picker-desc-preview"></div>
+  <div style="padding:0 16px 8px"><button id="ignore-btn" onclick="toggleIgnore()" style="width:100%;padding:10px;border-radius:12px;border:1px solid #f8717144;background:#f8717111;color:#f87171;font-size:14px;font-weight:600;cursor:pointer">🚫 Buchung ignorieren</button></div>
   <div class="sheet-scroll-inner" id="cat-picker-list"></div>
 </div>
 
@@ -791,6 +792,16 @@ function findMatchingKeyword(desc, catKey) {
   return kws.find(w => l.includes(w)) || null;
 }
 
+function toggleIgnore() {
+  if (pickerTxIndex === null) return;
+  const tx = allTxs[pickerTxIndex];
+  tx.ignored = !tx.ignored;
+  saveTxs();
+  closeAllSheets();
+  render();
+}
+
+
 function openCatPicker(txIdx) {
   pickerTxIndex = txIdx;
   const tx = allTxs[txIdx];
@@ -848,6 +859,22 @@ function openCatPicker(txIdx) {
       ${isCurrent ? `<span class="cat-pick-check" style="color:${c.color}">✓</span>` : ''}
     </div>`;
   }).join("");
+
+  // Update ignore button state
+  const ignBtn = document.getElementById("ignore-btn");
+  if (ignBtn) {
+    if (tx.ignored) {
+      ignBtn.textContent = "✅ Wieder einblenden";
+      ignBtn.style.background = "#22c55e11";
+      ignBtn.style.borderColor = "#22c55e44";
+      ignBtn.style.color = "#22c55e";
+    } else {
+      ignBtn.textContent = "🚫 Buchung ignorieren";
+      ignBtn.style.background = "#f8717111";
+      ignBtn.style.borderColor = "#f8717144";
+      ignBtn.style.color = "#f87171";
+    }
+  }
 
   openSheet("cat-picker");
 }
@@ -1162,8 +1189,8 @@ function render() {
     `<button class="month-pill${m===activeMonth?" active":""}" onclick="selMonth('${m}')">${ml(m)}</button>`
   ).join("");
 
-  const mExp = exp.filter(t=>mk(t.date)===activeMonth);
-  const mInc = inc.filter(t=>mk(t.date)===activeMonth);
+  const mExp = exp.filter(t=>mk(t.date)===activeMonth && !t.ignored);
+  const mInc = inc.filter(t=>mk(t.date)===activeMonth && !t.ignored);
 
   // When showing all accounts, convert EUR→CHF using the exchange rate
   function normAmt(t) { return acc === "all" ? Math.abs(toChf(t.amount, t.bank)) : Math.abs(t.amount); }
@@ -1211,11 +1238,11 @@ function render() {
   function renderTxRow(t) {
     const c=CATS[t.category]||CATS.sonstiges, d=new Date(t.date);
     const idx = allTxs.indexOf(t);
-    return `<div class="tx-row" onclick="openCatPicker(${idx})">
-      <div class="tx-ico" style="background:${c.color}22;color:${c.color}">${c.icon}</div>
+    return `<div class="tx-row${t.ignored?" ignored-row":""}" onclick="openCatPicker(${idx})" style="${t.ignored?"opacity:0.4;":""}">
+      <div class="tx-ico" style="background:${c.color}22;color:${c.color}">${t.ignored?"🚫":c.icon}</div>
       <div class="tx-info">
         <div class="tx-desc">${(t.description||"").slice(0,44)}${(t.description||"").length>44?"…":""}</div>
-        <div class="tx-meta">${d.getDate()}.${d.getMonth()+1}.${d.getFullYear()} · ${c.label}${t.bank==="spk"?" · EUR":t.bank==="zkb"?" · CHF":""}</div>
+        <div class="tx-meta">${d.getDate()}.${d.getMonth()+1}.${d.getFullYear()} · ${t.ignored?"Ignoriert":c.label}${t.bank==="spk"?" · EUR":t.bank==="zkb"?" · CHF":""}</div>
       </div>
       <div class="tx-amt ${t.amount<0?"neg":"pos"}">${fmtAmount(t.amount, t.bank)}</div>
     </div>`;
@@ -1233,9 +1260,15 @@ function render() {
   } else {
     const unkat = list.filter(t => t.category === "unkategorisiert");
     const kat   = list.filter(t => t.category !== "unkategorisiert");
+    // Also show ignored transactions at the bottom (dimmed)
+    const ignoredMonth = [...exp, ...inc].filter(t=>mk(t.date)===activeMonth && t.ignored);
     const html = [
       ...(unkat.length ? [unkat.map(renderTxRow).join("")] : []),
-      ...(kat.length   ? [kat.map(renderTxRow).join("")] : [])
+      ...(kat.length   ? [kat.map(renderTxRow).join("")] : []),
+      ...(ignoredMonth.length ? [
+        `<div style="padding:10px 16px 4px;font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:0.5px">Ignoriert (${ignoredMonth.length})</div>`,
+        ignoredMonth.map(renderTxRow).join("")
+      ] : [])
     ].join("") || `<div class="empty">Keine Buchungen für diesen Monat.</div>`;
     document.getElementById("tx-list").innerHTML = html;
   }
