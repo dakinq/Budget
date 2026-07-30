@@ -446,7 +446,7 @@
 
       <div id="prognose-content">
         <div class="sec">
-          <div class="sec-title">Monatsverlauf — Ausgaben</div>
+          <div class="sec-title" id="bar-chart-title">Monatsverlauf — Ausgaben</div>
           <div class="bar-wrap"><canvas id="bar-long" width="280" height="160" style="width:100%;height:auto"></canvas></div>
           <div id="bar-legend" style="display:flex;flex-wrap:wrap;gap:6px 12px;padding:8px 4px 0"></div>
         </div>
@@ -1008,7 +1008,7 @@ function setAccount(acc) {
     if(b1) b1.classList.toggle("active", a===acc);
     if(b2) b2.classList.toggle("active", a===acc);
   });
-  activeMonth = null; activeCat = null;
+  activeMonth = null; activeCat = null; activePrognoseCat = null;
   render();
   if (activeTab === 1) renderPrognose();
 }
@@ -1133,11 +1133,29 @@ function pickCat(newCat) {
     if (userKws[oldCat]) removeUserKw(oldCat, kw);
   }
   tx.category = newCat;
-  tx.manual = true; // mark as manually categorized — never show as "uncategorized"
+  tx.manual = true;
+
+  // Re-categorize all other non-manual transactions that match the new keyword
+  let reCatCount = 0;
+  if (kw && newCat !== "sonstiges") {
+    allTxs.forEach(function(t, i) {
+      if (i === pickerTxIndex) return;
+      if (t.manual) return;
+      if ((t.description || "").toLowerCase().includes(kw)) {
+        t.category = newCat;
+        reCatCount++;
+      }
+    });
+  }
+
   saveTxs();
   closeAllSheets(); render();
-  const kwMsg = kw ? ` · „${kw}" gespeichert` : "";
-  showToast(`${CATS[newCat].icon} ${CATS[newCat].label}${kwMsg}`);
+  const allCatsMap = {...CATS, ...userCats};
+  const catLabel = (allCatsMap[newCat] || {}).label || newCat;
+  const catIcon = (allCatsMap[newCat] || {}).icon || "";
+  const kwMsg = kw ? ` · „${kw}"` : "";
+  const reMsg = reCatCount > 0 ? ` · ${reCatCount} weitere` : "";
+  showToast(`${catIcon} ${catLabel}${kwMsg}${reMsg}`);
 }
 
 // ── Settings ──
@@ -1871,6 +1889,13 @@ addSwipeToClose("cat-detail-sheet", closeAllSheets);
 addSwipeToClose("ignored-sheet", closeAllSheets);
 
 // ── Prognose ──
+let activePrognoseCat = null;
+
+function selectPrognoseCat(key) {
+  activePrognoseCat = activePrognoseCat === key ? null : key;
+  renderPrognose();
+}
+
 function renderPrognose() {
   const txs = filteredTxs();
   const acc = activeAccount;
@@ -1887,30 +1912,38 @@ function renderPrognose() {
   const monthExp = months.map(m => exp.filter(t=>mk(t.date)===m).reduce((s,t)=>s+normE(t),0));
   const monthInc = months.map(m => inc.filter(t=>mk(t.date)===m).reduce((s,t)=>s+normI(t),0));
   const summAcc = acc === "all" ? "zkb" : acc;
-
-  const barCanvas = document.getElementById("bar-long");
-  // Build per-category data for stacked bar (top categories by total spend)
-  const allCatKeys = Object.keys({...CATS, ...userCats});
-  const catBarData = allCatKeys.map(k => {
-    const color = (CATS[k] || userCats[k] || {}).color || "#94a3b8";
-    const values = months.map(m =>
-      exp.filter(t => mk(t.date) === m && t.category === k).reduce((s, t) => s + normE(t), 0)
-    );
-    return { color, values };
-  }).filter(c => c.values.some(v => v > 0));
-  drawStackedBar(barCanvas, months.map(m => ml(m).split(" ")[0]), catBarData, monthExp);
-
-  // Legend — only show cats that appear in this data
   const allCatsMap = {...CATS, ...userCats};
-  document.getElementById("bar-legend").innerHTML = catBarData.map(c => {
-    const catKey = allCatKeys.find(k => (allCatsMap[k] || {}).color === c.color);
-    if (!catKey) return "";
-    const cat = allCatsMap[catKey];
-    return `<div style="display:flex;align-items:center;gap:4px;font-size:11px;color:var(--muted)">
-      <span style="width:10px;height:10px;border-radius:3px;background:${cat.color};flex-shrink:0;display:inline-block"></span>
-      ${cat.icon} ${cat.label}
-    </div>`;
-  }).join("");
+  const allCatKeys = Object.keys(allCatsMap);
+  const barCanvas = document.getElementById("bar-long");
+
+  if (activePrognoseCat) {
+    const cat = allCatsMap[activePrognoseCat];
+    const catVals = months.map(m =>
+      exp.filter(t => mk(t.date) === m && t.category === activePrognoseCat).reduce((s,t) => s + normE(t), 0)
+    );
+    drawStackedBar(barCanvas, months.map(m => ml(m).split(" ")[0]), [{ color: cat.color, values: catVals }], catVals);
+    document.getElementById("bar-chart-title").textContent = `${cat.icon} ${cat.label} — Monatsverlauf`;
+    document.getElementById("bar-legend").innerHTML =
+      `<button onclick="selectPrognoseCat(null)" style="background:none;border:1px solid var(--border);border-radius:8px;color:var(--muted);font-size:12px;padding:3px 10px;cursor:pointer">← Alle Kategorien</button>`;
+  } else {
+    const catBarData = allCatKeys.map(k => {
+      const color = (allCatsMap[k] || {}).color || "#94a3b8";
+      const values = months.map(m =>
+        exp.filter(t => mk(t.date) === m && t.category === k).reduce((s,t) => s + normE(t), 0)
+      );
+      return { key: k, color, values };
+    }).filter(c => c.values.some(v => v > 0));
+    drawStackedBar(barCanvas, months.map(m => ml(m).split(" ")[0]), catBarData, monthExp);
+    document.getElementById("bar-chart-title").textContent = "Monatsverlauf — Ausgaben";
+    document.getElementById("bar-legend").innerHTML = catBarData.map(c => {
+      const cat = allCatsMap[c.key];
+      if (!cat) return "";
+      return `<div style="display:flex;align-items:center;gap:4px;font-size:11px;color:var(--muted)">
+        <span style="width:10px;height:10px;border-radius:3px;background:${cat.color};flex-shrink:0;display:inline-block"></span>
+        ${cat.icon} ${cat.label}
+      </div>`;
+    }).join("");
+  }
 
   const avg = monthExp.reduce((s,v)=>s+v,0) / monthExp.length;
   const avgInc = monthInc.reduce((s,v)=>s+v,0) / monthInc.length;
@@ -1924,16 +1957,18 @@ function renderPrognose() {
     <div class="card"><div class="card-label">Sparquote</div><div class="card-val blue">${savingsRate}%</div></div>
   `;
 
-  const topCats = Object.keys(CATS).map(k=>({
-    key:k, total: exp.filter(t=>t.category===k).reduce((s,t)=>s+Math.abs(t.amount),0)
-  })).sort((a,b)=>b.total-a.total).slice(0,5).filter(c=>c.total>0);
+  const topCats = Object.keys(allCatsMap).map(k=>({
+    key:k, total: exp.filter(t=>t.category===k).reduce((s,t)=>s+normE(t),0)
+  })).sort((a,b)=>b.total-a.total).slice(0,8).filter(c=>c.total>0);
 
   document.getElementById("cat-trend-list").innerHTML = topCats.map(({key})=>{
-    const c = CATS[key];
-    const vals = months.map(m => exp.filter(t=>mk(t.date)===m&&t.category===key).reduce((s,t)=>s+Math.abs(t.amount),0));
+    const c = allCatsMap[key];
+    if (!c) return "";
+    const vals = months.map(m => exp.filter(t=>mk(t.date)===m&&t.category===key).reduce((s,t)=>s+normE(t),0));
     const catAvg = vals.reduce((s,v)=>s+v,0)/vals.length;
     const catTrend = vals.length>=2 ? vals[vals.length-1]-vals[vals.length-2] : 0;
-    return `<div style="padding:12px 16px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:12px">
+    const isActive = activePrognoseCat === key;
+    return `<div onclick="selectPrognoseCat('${key}')" style="padding:12px 16px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:12px;cursor:pointer;transition:background .15s;${isActive ? `background:${c.color}18;` : ""}">
       <div style="width:36px;height:36px;border-radius:10px;background:${c.color}22;color:${c.color};display:flex;align-items:center;justify-content:center;font-size:18px;flex-shrink:0">${c.icon}</div>
       <div style="flex:1">
         <div style="font-size:14px;font-weight:600">${c.label}</div>
