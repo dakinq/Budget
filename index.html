@@ -351,8 +351,8 @@
       <div class="month-scroll" id="months"></div>
 
       <div class="cards">
-        <div class="card"><div class="card-label">Ausgaben</div><div class="card-val red" id="c-exp">—</div></div>
-        <div class="card"><div class="card-label">Einnahmen</div><div class="card-val green" id="c-inc">—</div></div>
+        <div class="card" id="card-exp" onclick="toggleView('exp')" style="cursor:pointer"><div class="card-label">Ausgaben</div><div class="card-val red" id="c-exp">—</div></div>
+        <div class="card" id="card-inc" onclick="toggleView('inc')" style="cursor:pointer"><div class="card-label">Einnahmen</div><div class="card-val green" id="c-inc">—</div></div>
         <div class="card"><div class="card-label">Bilanz</div><div class="card-val blue" id="c-bal">—</div></div>
         <div class="card"><div class="card-label">Buchungen</div><div class="card-val gray" id="c-cnt">—</div></div>
       </div>
@@ -515,8 +515,8 @@ function parseDate(s) {
 
 function parseCSV(text) {
   const lines = text.trim().split(/\r?\n/);
-  if (lines.length < 2) return [];
-  const header = lines[0].replace(/^\uFEFF/, ""); // strip UTF-8 BOM if present
+  if (lines.length < 2) return { txs: [], skipped: [], dedupCount: 0 };
+  const header = lines[0].replace(/^\uFEFF/, "");
   const sep = header.includes(";") ? ";" : ",";
 
   function splitLine(line, sep) {
@@ -530,80 +530,92 @@ function parseCSV(text) {
     result.push(cur.trim()); return result;
   }
 
-  const headerClean = header.replace(/^\uFEFF/, ""); // strip UTF-8 BOM
-  const isZKBde = /buchungsdatum/i.test(headerClean);
-  const isZKBen = /^date;booking text/i.test(headerClean);
+  const isZKBde = /buchungsdatum/i.test(header);
+  const isZKBen = /^"?date"?;"?booking text"?/i.test(header);
   const isZKB = isZKBde || isZKBen;
-  const isSPK = /auftragskonto|beguenstigter|glaeubiger|verwendungszweck/i.test(headerClean);
-  // Determine bank for currency tagging
+  const isSPK = /auftragskonto|beguenstigter|glaeubiger|verwendungszweck/i.test(header);
   const bank = isZKB ? "zkb" : (isSPK ? "spk" : "unknown");
 
-  // Build column index map for English ZKB format
-  // Header: Date;Booking text;Curr;Amount details;ZKB reference;Reference number;Debit CHF;Credit CHF;Value date;Balance CHF;Payment purpose;Details
-  //         0    1            2    3               4             5                6         7           8          9           10              11
-  const rawRows = []; // {date, amount, desc, zkbRef} — for dedup
+  const rawRows = [];
+  const skipped = []; // {lineNum, preview, reason}
+
   for (let i = 1; i < lines.length; i++) {
-    if (!lines[i].trim()) continue;
-    const cols = splitLine(lines[i], sep);
+    const rawLine = lines[i];
+    if (!rawLine.trim()) continue;
+    const cols = splitLine(rawLine, sep);
     if (cols.length < 3) continue;
-    let date, amount, desc, zkbRef = "";
+    if (!cols.some(function(c){ return c.trim(); })) continue; // all-semicolon lines
+
+    var date, amount, desc, zkbRef = "";
 
     if (isZKBen) {
-      // English ZKB export format
-      // Header: Date;Booking text;Curr;Amount details;ZKB reference;Reference number;Debit CHF;Credit CHF;Value date;Balance CHF;Payment purpose;Details
+      // English ZKB: Date;Booking text;Curr;Amount details;ZKB reference;Reference number;Debit CHF;Credit CHF;...
       date = parseDate(cols[0]);
-      const deb = parseFloat((cols[6]||"0").replace(/['\s]/g,"").replace(",",".")) || 0;
-      const cre = parseFloat((cols[7]||"0").replace(/['\s]/g,"").replace(",",".")) || 0;
+      var deb = parseFloat((cols[6]||"0").replace(/['\s]/g,"").replace(",",".")) || 0;
+      var cre = parseFloat((cols[7]||"0").replace(/['\s]/g,"").replace(",",".")) || 0;
       amount = cre > 0 ? cre : (deb > 0 ? -deb : 0);
       desc = (cols[1]||"").replace(/\s+/g," ").trim();
-      zkbRef = (cols[4]||"").trim(); // ZKB reference — present on definitive rows, absent on pending
+      zkbRef = (cols[4]||"").trim();
     } else if (isZKBde) {
       date = parseDate(cols[0]);
-      const deb = parseFloat((cols[2]||"0").replace(/['\s]/g,"").replace(",",".")) || 0;
-      const cre = parseFloat((cols[3]||"0").replace(/['\s]/g,"").replace(",",".")) || 0;
-      amount = cre > 0 ? cre : -deb;
+      var deb2 = parseFloat((cols[2]||"0").replace(/['\s]/g,"").replace(",",".")) || 0;
+      var cre2 = parseFloat((cols[3]||"0").replace(/['\s]/g,"").replace(",",".")) || 0;
+      amount = cre2 > 0 ? cre2 : -deb2;
       desc = (cols[5]||cols[4]||"").replace(/\s+/g," ").trim();
+      zkbRef = "";
     } else if (isSPK) {
       date = parseDate(cols[1]);
-      desc = [cols[11], cols[4]].filter(Boolean).join(" – ").replace(/\s+/g," ").trim();
+      desc = [cols[11], cols[4]].filter(Boolean).join(" - ").replace(/\s+/g," ").trim();
       amount = parseFloat((cols[14]||"0").replace(/\./g,"").replace(",",".")) || 0;
+      zkbRef = "";
     } else {
       date = parseDate(cols[0]); desc = cols[1]||"";
       amount = parseFloat((cols[2]||"0").replace(",",".")) || 0;
+      zkbRef = "";
     }
 
-    if (!date || amount === 0) continue;
-    rawRows.push({ date: date.toISOString(), amount, desc, zkbRef });
+    var preview = cols.filter(function(c){ return c.trim(); }).slice(0,4).join(" | ");
+    if (!date) {
+      var hasContent = desc && desc.length > 0 && !/^(CHF|EUR|USD)$/i.test(desc);
+      if (hasContent) skipped.push({ lineNum: i+1, preview: preview, reason: 'Kein Datum (Spalte 1: "' + (cols[0]||"leer") + '")' });
+      continue;
+    }
+    if (amount === 0) {
+      skipped.push({ lineNum: i+1, preview: preview, reason: 'Betrag fehlt (Debit: "' + (cols[6]||cols[2]||"") + '", Credit: "' + (cols[7]||cols[3]||"") + '")' });
+      continue;
+    }
+    rawRows.push({ date: date.toISOString(), amount: amount, desc: desc, zkbRef: zkbRef });
   }
 
-  // Deduplicate ZKBen rows: ZKB exports card transactions twice —
-  // once as a pending row (no ZKB reference, no value date) and once as definitive.
-  // Strategy: for each pair with same date+amount+normalised description, keep the definitive row (has zkbRef).
-  const txs = [];
+  // Deduplicate ZKBen: ZKB exports card transactions twice (pending + definitive).
+  // Keep definitive row (has ZKB reference in col[4]).
+  var dedupCount = 0;
+  var txs = [];
   if (isZKBen) {
-    const seen = new Map(); // key → index in txs
-    for (const row of rawRows) {
-      // Normalise description: lowercase + collapse spaces (ZKB sometimes changes capitalisation)
-      const key = `${row.date.slice(0,10)}|${row.amount}|${row.desc.toLowerCase().replace(/\s+/g," ")}`;
-      if (seen.has(key)) {
-        // Prefer the row that has a ZKB reference (definitive booking)
-        const existingIdx = seen.get(key);
-        if (row.zkbRef && !txs[existingIdx]._zkbRef) {
-          txs[existingIdx] = { date: row.date, amount: row.amount, description: row.desc, category: categorize(row.desc), bank, _zkbRef: row.zkbRef };
+    var seen = {};
+    for (var r = 0; r < rawRows.length; r++) {
+      var row = rawRows[r];
+      var key = row.date.slice(0,10) + "|" + row.amount + "|" + row.desc.toLowerCase().replace(/\s+/g," ");
+      if (seen.hasOwnProperty(key)) {
+        dedupCount++;
+        var idx = seen[key];
+        if (row.zkbRef && !txs[idx]._zkbRef) {
+          txs[idx] = { date: row.date, amount: row.amount, description: row.desc, category: categorize(row.desc), bank: bank, _zkbRef: row.zkbRef };
         }
-        // else keep existing (already has ref, or neither has ref — first wins)
       } else {
-        seen.set(key, txs.length);
-        txs.push({ date: row.date, amount: row.amount, description: row.desc, category: categorize(row.desc), bank, _zkbRef: row.zkbRef });
+        seen[key] = txs.length;
+        txs.push({ date: row.date, amount: row.amount, description: row.desc, category: categorize(row.desc), bank: bank, _zkbRef: row.zkbRef });
       }
     }
-    // Strip internal dedup field before returning
-    return txs.map(({ _zkbRef, ...t }) => t);
+    // Strip internal dedup field
+    txs = txs.map(function(t) { return { date: t.date, amount: t.amount, description: t.description, category: t.category, bank: t.bank }; });
+    return { txs: txs, skipped: skipped, dedupCount: dedupCount };
   }
 
-  return rawRows.map(({ date, amount, desc, zkbRef }) => ({
-    date, amount, description: desc, category: categorize(desc), bank
-  }));
+  txs = rawRows.map(function(row) {
+    return { date: row.date, amount: row.amount, description: row.desc, category: categorize(row.desc), bank: bank };
+  });
+  return { txs: txs, skipped: skipped, dedupCount: 0 };
 }
 
 // ── Currency formatting ──
@@ -739,6 +751,7 @@ let allTxs = loadTxs();
 })();
 let activeMonth = null;
 let activeCat = null;
+let activeView = null; // null | "exp" | "inc"
 let pickerTxIndex = null;
 
 // ── Account filter ──
@@ -1182,8 +1195,18 @@ function render() {
     </div>`
   ).join("") || `<div style="color:var(--muted);font-size:13px;padding:6px">Keine Ausgaben</div>`;
 
-  let list = activeCat ? mExp.filter(t=>t.category===activeCat) : mExp;
-  list = [...list].sort((a,b)=>new Date(b.date)-new Date(a.date));
+  // Determine which transactions to show based on activeView / activeCat
+  let baseList;
+  if (activeCat) {
+    baseList = mExp.filter(t=>t.category===activeCat);
+  } else if (activeView === "exp") {
+    baseList = mExp; // expenses only (amount < 0)
+  } else if (activeView === "inc") {
+    baseList = mInc; // income only (amount > 0)
+  } else {
+    baseList = [...mExp, ...mInc];
+  }
+  const list = [...baseList].sort((a,b)=>new Date(b.date)-new Date(a.date));
 
   function renderTxRow(t) {
     const c=CATS[t.category]||CATS.sonstiges, d=new Date(t.date);
@@ -1202,21 +1225,33 @@ function render() {
     document.getElementById("tx-list").innerHTML =
       list.map(renderTxRow).join("") ||
       `<div class="empty">Keine Buchungen in dieser Kategorie.</div>`;
+  } else if (activeView) {
+    const label = activeView === "exp" ? "Ausgaben" : "Einnahmen";
+    document.getElementById("tx-list").innerHTML =
+      list.map(renderTxRow).join("") ||
+      `<div class="empty">Keine ${label} für diesen Monat.</div>`;
   } else {
     const unkat = list.filter(t => t.category === "unkategorisiert");
-    const kat = list.filter(t => t.category !== "unkategorisiert");
+    const kat   = list.filter(t => t.category !== "unkategorisiert");
     const html = [
       ...(unkat.length ? [unkat.map(renderTxRow).join("")] : []),
-      ...(kat.length ? [kat.map(renderTxRow).join("")] : [])
+      ...(kat.length   ? [kat.map(renderTxRow).join("")] : [])
     ].join("") || `<div class="empty">Keine Buchungen für diesen Monat.</div>`;
     document.getElementById("tx-list").innerHTML = html;
   }
 
+  // Highlight active card
+  ["exp","inc"].forEach(v => {
+    const el = document.getElementById("card-" + v);
+    if (el) el.style.outline = activeView === v ? "2px solid var(--accent, #60a5fa)" : "none";
+  });
+
   updateAccountSwitcherInfo();
 }
 
-function selMonth(m){ activeMonth=m; activeCat=null; render(); }
-function selCat(k){ activeCat=activeCat===k?null:k; render(); }
+function selMonth(m){ activeMonth=m; activeCat=null; activeView=null; render(); }
+function selCat(k){ activeCat=activeCat===k?null:k; activeView=null; render(); }
+function toggleView(v){ activeView = activeView===v ? null : v; activeCat=null; render(); }
 
 async function handleFile(file) {
   document.getElementById("loading").style.display="flex";
@@ -1231,13 +1266,12 @@ async function handleFile(file) {
   let text;
   try {
     const buf = await file.arrayBuffer();
-    // Try UTF-8 first (handles BOM automatically via utf-8-sig-like check)
+    // Try UTF-8 first (handles BOM); fall back to windows-1252 for Sparkasse
     const utf8text = new TextDecoder("utf-8").decode(buf);
     const firstLineUtf8 = utf8text.split("\n")[0].replace(/^\uFEFF/, "");
     if (/auftragskonto|buchungsdatum|buchungstag|booking text/i.test(firstLineUtf8)) {
       text = utf8text;
     } else {
-      // Fall back to windows-1252 (Sparkasse German exports)
       text = new TextDecoder("windows-1252").decode(buf);
     }
   } catch(e) {
@@ -1247,7 +1281,7 @@ async function handleFile(file) {
 
   const lines = text.trim().split(/\r?\n/).filter(l => l.trim());
   const header = (lines[0] || "").replace(/^\uFEFF/, ""); // strip BOM
-  const isZKB = /buchungsdatum/i.test(header) || /^date;booking text/i.test(header);
+  const isZKB = /buchungsdatum/i.test(header) || /^"?date"?;"?booking text"?/i.test(header);
   const isSPK = /auftragskonto|beguenstigter|glaeubiger|verwendungszweck/i.test(header);
 
   if (!isZKB && !isSPK) {
@@ -1255,26 +1289,28 @@ async function handleFile(file) {
     showErrorToast("❌ Bank nicht erkannt", `Diese CSV wurde nicht als Sparkasse oder ZKB erkannt.\n\nErste Zeile: ${header.slice(0,80)}…`); return;
   }
 
-  const newTxs = parseCSV(text);
+  const result = parseCSV(text);
+  const newTxs = result.txs;
+  const skipped = result.skipped;
+  const dedupCount = result.dedupCount;
   document.getElementById("loading").style.display="none";
 
-  if (!newTxs.length) {
+  if (!newTxs.length && !skipped.length) {
     const dataLines = lines.slice(1).filter(l => l.trim()).length;
-    showErrorToast("⚠️ Keine Buchungen gefunden", dataLines===0 ? "Die Datei enthält nur die Kopfzeile." : `${dataLines} Zeilen gefunden, aber keine lesbare Buchung.`); return;
+    showErrorToast("Keine Buchungen gefunden", dataLines===0 ? "Die Datei enthält nur die Kopfzeile." : dataLines + " Zeilen gefunden, aber keine lesbare Buchung."); return;
   }
 
-  const dupes = newTxs.filter(t =>
-    allTxs.some(e => e.date===t.date && e.amount===t.amount && e.description===t.description)
-  ).length;
+  const dupes = newTxs.filter(function(t) {
+    return allTxs.some(function(e) { return e.date===t.date && e.amount===t.amount && e.description===t.description; });
+  }).length;
 
-  allTxs = [...allTxs, ...newTxs];
+  allTxs = allTxs.concat(newTxs);
   saveTxs();
-  activeMonth=null; activeCat=null;
+  activeMonth=null; activeCat=null; activeView=null;
   render();
 
-  const bank = isZKB ? "ZKB (CHF)" : "Sparkasse (EUR)";
-  const dupeNote = dupes > 0 ? ` (${dupes} Duplikate übersprungen)` : "";
-  showToast(`✅ ${newTxs.length} Buchungen · ${bank}${dupeNote}`);
+  const bankLabel = isZKB ? "ZKB (CHF)" : "Sparkasse (EUR)";
+  showImportReport({ count: newTxs.length, bank: bankLabel, dupes: dupes, dedupCount: dedupCount, skipped: skipped });
 }
 
 function showErrorToast(title, detail) {
@@ -1293,11 +1329,59 @@ function showErrorToast(title, detail) {
   document.body.appendChild(modal);
 }
 
+function showImportReport(opts) {
+  var count = opts.count, bank = opts.bank, dupes = opts.dupes, dedupCount = opts.dedupCount, skipped = opts.skipped;
+  var existing = document.getElementById("import-report-modal");
+  if (existing) existing.remove();
+
+  var hasIssues = skipped.length > 0;
+  var modal = document.createElement("div");
+  modal.id = "import-report-modal";
+  modal.style.cssText = "position:fixed;inset:0;z-index:200;display:flex;align-items:flex-end;background:rgba(0,0,0,0.6);backdrop-filter:blur(4px);";
+
+  var dupeInfo = dupes > 0
+    ? "<div style='color:#94a3b8;font-size:13px;margin-top:4px'>" + dupes + " bereits vorhanden (übersprungen)</div>"
+    : "";
+  var dedupInfo = dedupCount > 0
+    ? "<div style='color:#94a3b8;font-size:13px;margin-top:4px'>" + dedupCount + " ZKB-Doppelbuchung" + (dedupCount > 1 ? "en" : "") + " zusammengefasst</div>"
+    : "";
+
+  var skippedHtml = "";
+  if (hasIssues) {
+    var rows = skipped.map(function(s) {
+      return "<div style='background:#0f172a;border-radius:8px;padding:10px 12px;margin-bottom:6px'>"
+        + "<div style='font-size:11px;color:#64748b;margin-bottom:3px'>Zeile " + s.lineNum + "</div>"
+        + "<div style='font-size:13px;color:#e2e8f0;word-break:break-all'>" + s.preview.replace(/</g,"&lt;") + "</div>"
+        + "<div style='font-size:12px;color:#f87171;margin-top:3px'>" + s.reason.replace(/</g,"&lt;") + "</div>"
+        + "</div>";
+    }).join("");
+    skippedHtml = "<div style='margin-top:16px'>"
+      + "<div style='font-size:13px;font-weight:600;color:#f87171;margin-bottom:8px'>"
+      + skipped.length + " Zeile" + (skipped.length > 1 ? "n" : "") + " nicht erkannt:</div>"
+      + "<div style='max-height:240px;overflow-y:auto'>" + rows + "</div>"
+      + "</div>";
+  }
+
+  var borderColor = hasIssues ? "#f97316" : "#22c55e";
+  var titleColor  = hasIssues ? "#fb923c" : "#4ade80";
+  var titleText   = hasIssues ? "&#9888; Import mit Hinweisen" : "&#10003; Import erfolgreich";
+
+  modal.innerHTML =
+    "<div style='background:#1e293b;border:1px solid " + borderColor + ";border-radius:20px 20px 0 0;padding:24px 20px 32px;width:100%;animation:slideUp .25s ease'>"
+    + "<div style='font-size:17px;font-weight:700;color:" + titleColor + ";margin-bottom:6px'>" + titleText + "</div>"
+    + "<div style='font-size:15px;color:#e2e8f0;font-weight:600'>" + count + " Buchungen importiert &middot; " + bank + "</div>"
+    + dupeInfo + dedupInfo + skippedHtml
+    + "<button onclick=\"document.getElementById('import-report-modal').remove()\" style='margin-top:20px;width:100%;background:#334155;border:none;border-radius:12px;padding:13px;color:#f1f5f9;font-size:15px;font-weight:600;cursor:pointer'>OK</button>"
+    + "</div>";
+  modal.onclick = function(e) { if (e.target === modal) modal.remove(); };
+  document.body.appendChild(modal);
+}
+
 function triggerUpload(){ document.getElementById("csv-input").click(); }
 
 function clearData(){
   if(!confirm("Alle Daten löschen?")) return;
-  allTxs=[]; activeMonth=null; activeCat=null; activeAccount="all";
+  allTxs=[]; activeMonth=null; activeCat=null; activeView=null; activeAccount="all";
   saveTxs();
   setAccount("all");
   render();
