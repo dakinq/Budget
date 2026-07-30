@@ -133,7 +133,7 @@
     .tx-row:active { background: var(--surface2); }
     .tx-ico { width: 36px; height: 36px; border-radius: 10px; display: flex; align-items: center; justify-content: center; font-size: 16px; flex-shrink: 0; }
     .tx-info { flex: 1; min-width: 0; }
-    .tx-desc { font-size: 14px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .tx-desc { font-size: 14px; font-weight: 500; white-space: normal; line-height: 1.35; word-break: break-word; }
     .tx-meta { font-size: 11px; color: var(--muted); margin-top: 2px; }
     .tx-amt { font-size: 14px; font-weight: 600; white-space: nowrap; }
     .tx-amt.neg { color: var(--red); } .tx-amt.pos { color: var(--green); }
@@ -556,6 +556,8 @@ function parseCSV(text) {
       var cre = parseFloat((cols[7]||"0").replace(/['\s]/g,"").replace(",",".")) || 0;
       amount = cre > 0 ? cre : (deb > 0 ? -deb : 0);
       desc = (cols[1]||"").replace(/\s+/g," ").trim();
+      // Strip ZKB card prefix: "Purchase ZKB Visa Debit card No. xxxx 1234[,] "
+      desc = desc.replace(/^Purchase ZKB Visa Debit card [Nn]o\.? xxxx \d+[,]?\s*/i, "");
       zkbRef = (cols[4]||"").trim();
     } else if (isZKBde) {
       date = parseDate(cols[0]);
@@ -837,7 +839,7 @@ function openCatPicker(txIdx) {
 
   document.getElementById("picker-desc-preview").innerHTML = `
     <div style="padding:10px 16px 0;font-size:12px;color:var(--muted)">
-      Buchung: <span style="color:var(--text);font-weight:500">${desc.slice(0,60)}${desc.length>60?"…":""}</span>
+      Buchung: <span style="color:var(--text);font-weight:500">${desc}</span>
     </div>
     ${reasonHtml}
     <div style="padding:8px 16px 4px;font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:0.5px">Kategorie wechseln</div>
@@ -1241,7 +1243,7 @@ function render() {
     return `<div class="tx-row${t.ignored?" ignored-row":""}" onclick="openCatPicker(${idx})" style="${t.ignored?"opacity:0.4;":""}">
       <div class="tx-ico" style="background:${c.color}22;color:${c.color}">${t.ignored?"🚫":c.icon}</div>
       <div class="tx-info">
-        <div class="tx-desc">${(t.description||"").slice(0,44)}${(t.description||"").length>44?"…":""}</div>
+        <div class="tx-desc">${t.description||""}</div>
         <div class="tx-meta">${d.getDate()}.${d.getMonth()+1}.${d.getFullYear()} · ${t.ignored?"Ignoriert":c.label}${t.bank==="spk"?" · EUR":t.bank==="zkb"?" · CHF":""}</div>
       </div>
       <div class="tx-amt ${t.amount<0?"neg":"pos"}">${fmtAmount(t.amount, t.bank)}</div>
