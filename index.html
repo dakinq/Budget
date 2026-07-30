@@ -321,6 +321,16 @@
   </div>
 </div>
 
+<!-- ── IGNORED SHEET ── -->
+<div class="bottom-sheet" id="ignored-sheet">
+  <div class="sheet-handle" style="cursor:pointer" onclick="closeAllSheets()"></div>
+  <div class="sheet-header">
+    <span class="sheet-title">🚫 Ignorierte Buchungen</span>
+    <button onclick="closeAllSheets()" style="background:none;border:none;color:var(--muted);font-size:22px;cursor:pointer;padding:0 4px">×</button>
+  </div>
+  <div class="sheet-scroll-inner" id="ignored-sheet-content" style="padding:0 0 24px"></div>
+</div>
+
 <!-- ── MAIN LAYOUT ── -->
 <!-- LOGIN SCREEN -->
 <div id="login-screen" style="display:flex;position:fixed;inset:0;z-index:500;background:var(--bg);flex-direction:column;align-items:center;justify-content:center;padding:32px 24px">
@@ -345,6 +355,17 @@
 </div>
 
 <div class="tabs-wrapper" style="display:none">
+  <!-- Bottom Nav Bar (visible on Desktop & as fallback) -->
+  <nav class="bottom-nav" id="bottom-nav">
+    <button class="bottom-nav-btn active" id="nav-dashboard" onclick="switchTab(0)">
+      <span class="bottom-nav-icon">💰</span>
+      <span class="bottom-nav-label">Dashboard</span>
+    </button>
+    <button class="bottom-nav-btn" id="nav-prognose" onclick="switchTab(1)">
+      <span class="bottom-nav-icon">📈</span>
+      <span class="bottom-nav-label">Prognose</span>
+    </button>
+  </nav>
   <div class="tabs-slider" id="tabs-slider">
 
     <!-- DASHBOARD SCREEN -->
@@ -1108,39 +1129,63 @@ function renderSettings() {
     </div>`;
   }).join("");
   const ignoredTxs = allTxs.filter(function(t) { return t.ignored; });
-  var ignoredBlock = "";
+  var ignoredEntry = "";
   if (ignoredTxs.length > 0) {
-    var ignoredRows = ignoredTxs.map(function(t) {
-      var idx = allTxs.indexOf(t);
-      var d = new Date(t.date);
-      var amt = (t.amount > 0 ? "+" : "") + t.amount.toFixed(2);
-      var amtColor = t.amount < 0 ? "var(--red)" : "var(--green)";
-      return "<div style='display:flex;align-items:center;gap:10px;padding:8px 0;" + "border-bottom:1px solid #334155;opacity:0.7'>"
-        + "<div style='flex:1;min-width:0'>"
-        + "<div style='font-size:13px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis'>" + (t.description || "—") + "</div>"
-        + "<div style='font-size:11px;color:var(--muted);margin-top:2px'>" + d.getDate() + "." + (d.getMonth()+1) + "." + d.getFullYear() + "</div>"
-        + "</div>"
-        + "<div style='font-size:13px;font-weight:600;color:" + amtColor + ";white-space:nowrap'>" + amt + "</div>"
-        + "<button onclick='unignoreTx(" + idx + ")' style='background:none;border:1px solid #22c55e44;border-radius:8px;color:#22c55e;font-size:11px;padding:3px 8px;cursor:pointer;flex-shrink:0'>&#10003;</button>"
-        + "</div>";
-    }).join("");
-    ignoredBlock = "<div style='padding:16px 20px 8px;border-bottom:1px solid var(--border)'>"
-      + "<div style='display:flex;align-items:center;justify-content:space-between;margin-bottom:10px'>"
-      + "<span style='font-size:15px;font-weight:600'>&#x1F6AB; Ignorierte Buchungen (" + ignoredTxs.length + ")</span>"
-      + "<button onclick='unignoreAll()' style='background:none;border:1px solid var(--muted);border-radius:8px;color:var(--muted);font-size:12px;padding:4px 10px;cursor:pointer'>Alle einblenden</button>"
+    ignoredEntry = "<div class='settings-cat-block' style='cursor:pointer' onclick='openIgnoredSheet()'>"
+      + "<div class='settings-cat-head'>"
+      + "<div style='width:36px;height:36px;border-radius:10px;background:#f8717122;color:#f87171;display:flex;align-items:center;justify-content:center;font-size:18px'>🚫</div>"
+      + "<span class='settings-cat-label'>Ignorierte Buchungen</span>"
+      + "<span style='font-size:13px;color:var(--muted);margin-right:6px'>" + ignoredTxs.length + "</span>"
+      + "<span style='color:var(--muted);font-size:18px'>›</span>"
       + "</div>"
-      + ignoredRows
       + "</div>";
   }
-  document.getElementById("settings-content").innerHTML = ignoredBlock + exchangeBlock + newCatBtn + catBlocks;
+  document.getElementById("settings-content").innerHTML = ignoredEntry + exchangeBlock + newCatBtn + catBlocks;
 }
 
 function unignoreTx(idx) {
-  if (allTxs[idx]) { allTxs[idx].ignored = false; saveTxs(); renderSettings(); render(); }
+  if (allTxs[idx]) {
+    allTxs[idx].ignored = false;
+    saveTxs(); render(); renderSettings(); renderIgnoredSheet();
+    // If no more ignored, close the sheet
+    if (!allTxs.some(t => t.ignored)) closeAllSheets();
+  }
 }
+function openIgnoredSheet() {
+  renderIgnoredSheet();
+  openSheet("ignored-sheet");
+}
+
+function renderIgnoredSheet() {
+  const ignoredTxs = allTxs.filter(t => t.ignored);
+  const el = document.getElementById("ignored-sheet-content");
+  if (ignoredTxs.length === 0) {
+    el.innerHTML = "<div style='padding:40px 20px;text-align:center;color:var(--muted);font-size:14px'>Keine ignorierten Buchungen.</div>";
+    return;
+  }
+  var rows = ignoredTxs.map(function(t) {
+    var idx = allTxs.indexOf(t);
+    var d = new Date(t.date);
+    var amt = (t.amount > 0 ? "+" : "") + t.amount.toFixed(2);
+    var amtColor = t.amount < 0 ? "var(--red)" : "var(--green)";
+    return "<div style='display:flex;align-items:center;gap:10px;padding:12px 20px;border-bottom:1px solid var(--border)'>"
+      + "<div style='flex:1;min-width:0'>"
+      + "<div style='font-size:13px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis'>" + (t.description || "—") + "</div>"
+      + "<div style='font-size:11px;color:var(--muted);margin-top:2px'>" + d.getDate() + "." + (d.getMonth()+1) + "." + d.getFullYear() + "</div>"
+      + "</div>"
+      + "<div style='font-size:13px;font-weight:600;color:" + amtColor + ";white-space:nowrap;margin-right:8px'>" + amt + "</div>"
+      + "<button onclick='unignoreTx(" + idx + ")' style='background:none;border:1px solid #22c55e44;border-radius:8px;color:#22c55e;font-size:12px;padding:4px 10px;cursor:pointer;flex-shrink:0'>Einblenden</button>"
+      + "</div>";
+  }).join("");
+  var unignoreAllBtn = "<div style='padding:16px 20px'>"
+    + "<button onclick='unignoreAll()' style='width:100%;background:none;border:1px solid var(--muted);border-radius:12px;color:var(--muted);font-size:13px;font-weight:600;padding:10px;cursor:pointer'>Alle einblenden</button>"
+    + "</div>";
+  el.innerHTML = rows + unignoreAllBtn;
+}
+
 function unignoreAll() {
   allTxs.forEach(t => { if (t.ignored) t.ignored = false; });
-  saveTxs(); renderSettings(); render();
+  saveTxs(); render(); renderSettings(); closeAllSheets();
 }
 
 function updateRatePreview() {
@@ -1670,6 +1715,50 @@ function switchTab(idx) {
   }, { passive: true });
 })();
 
+// ── Mouse drag to switch tabs (Desktop) ──
+(function setupMouseSwipe() {
+  let startX = 0, startT = 0, dragging = false, dx = 0;
+  const wrapper = document.querySelector(".tabs-wrapper");
+
+  wrapper.addEventListener("mousedown", e => {
+    if (document.querySelector(".bottom-sheet.open")) return;
+    // Only drag on the background, not on buttons/inputs
+    if (e.target.closest("button, input, select, textarea, a")) return;
+    startX = e.clientX;
+    startT = Date.now();
+    dragging = false; dx = 0;
+    wrapper.style.userSelect = "none";
+  });
+
+  window.addEventListener("mousemove", e => {
+    if (!startT) return;
+    if (document.querySelector(".bottom-sheet.open")) return;
+    dx = e.clientX - startX;
+    if (!dragging && Math.abs(dx) > 10) dragging = true;
+    if (dragging) {
+      const base = activeTab * 100;
+      slider.style.transition = "none";
+      slider.style.transform = `translateX(calc(-${base}% + ${dx}px))`;
+    }
+  });
+
+  window.addEventListener("mouseup", e => {
+    if (!dragging) { startT = 0; wrapper.style.userSelect = ""; return; }
+    slider.style.transition = "";
+    const dt = Date.now() - startT;
+    const threshold = Math.abs(dx) > window.innerWidth * 0.3 || (Math.abs(dx) > 60 && dt < 400);
+    if (threshold) {
+      if (dx < 0 && activeTab === 0) switchTab(1);
+      else if (dx > 0 && activeTab === 1) switchTab(0);
+      else switchTab(activeTab);
+    } else {
+      switchTab(activeTab);
+    }
+    dragging = false; startT = 0;
+    wrapper.style.userSelect = "";
+  });
+})();
+
 // ── Sheet swipe-to-close (without scrolling background) ──
 function addSwipeToClose(sheetId, closeFn) {
   const sheet = document.getElementById(sheetId);
@@ -1710,6 +1799,7 @@ addSwipeToClose("cat-picker", closeAllSheets);
 addSwipeToClose("settings-sheet", closeAllSheets);
 addSwipeToClose("new-cat-sheet", closeNewCat);
 addSwipeToClose("cat-detail-sheet", closeAllSheets);
+addSwipeToClose("ignored-sheet", closeAllSheets);
 
 // ── Prognose ──
 function renderPrognose() {
