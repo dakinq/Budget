@@ -945,8 +945,8 @@ function setAccount(acc) {
 }
 
 function filteredTxs() {
-  if (activeAccount === "all") return allTxs;
-  return allTxs.filter(t => t.bank === activeAccount);
+  if (activeAccount === "all") return allTxs.filter(t => !t.ignored);
+  return allTxs.filter(t => t.bank === activeAccount && !t.ignored);
 }
 
 // ── Sheets ──
@@ -1410,8 +1410,8 @@ function render() {
   const txs = filteredTxs();
   const acc = activeAccount;
 
-  const exp = txs.filter(t=>t.amount<0 && !t.ignored);
-  const inc = txs.filter(t=>t.amount>0 && !t.ignored);
+  const exp = txs.filter(t=>t.amount<0);
+  const inc = txs.filter(t=>t.amount>0);
   const months = [...new Set(txs.map(t=>mk(t.date)))].sort().reverse();
   if (!activeMonth && months.length) activeMonth = months[0];
   if (months.length && !months.includes(activeMonth)) activeMonth = months[0];
@@ -1420,8 +1420,8 @@ function render() {
     `<button class="month-pill${m===activeMonth?" active":""}" onclick="selMonth('${m}')">${ml(m)}</button>`
   ).join("");
 
-  const mExp = exp.filter(t=>mk(t.date)===activeMonth && !t.ignored);
-  const mInc = inc.filter(t=>mk(t.date)===activeMonth && !t.ignored);
+  const mExp = exp.filter(t=>mk(t.date)===activeMonth);
+  const mInc = inc.filter(t=>mk(t.date)===activeMonth);
 
   // When showing all accounts, convert EUR→CHF using the exchange rate
   function normAmt(t) { return acc === "all" ? Math.abs(toChf(t.amount, t.bank)) : Math.abs(t.amount); }
@@ -1811,8 +1811,8 @@ function renderPrognose() {
   document.getElementById("prognose-empty").style.display = hasEnough ? "none" : "flex";
   if (!hasEnough) return;
 
-  const exp = txs.filter(t=>t.amount<0 && !t.ignored);
-  const inc = txs.filter(t=>t.amount>0 && !t.ignored);
+  const exp = txs.filter(t=>t.amount<0);
+  const inc = txs.filter(t=>t.amount>0);
   function normE(t) { return acc === "all" ? Math.abs(toChf(t.amount, t.bank)) : Math.abs(t.amount); }
   function normI(t) { return acc === "all" ? toChf(t.amount, t.bank) : t.amount; }
   const monthExp = months.map(m => exp.filter(t=>mk(t.date)===m).reduce((s,t)=>s+normE(t),0));
