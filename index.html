@@ -250,6 +250,10 @@
       touch-action: pan-y;
     }
   </style>
+  <!-- Firebase SDKs -->
+  <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
 </head>
 <body>
 
@@ -316,7 +320,30 @@
 </div>
 
 <!-- ── MAIN LAYOUT ── -->
-<div class="tabs-wrapper">
+<!-- LOGIN SCREEN -->
+<div id="login-screen" style="display:flex;position:fixed;inset:0;z-index:500;background:var(--bg);flex-direction:column;align-items:center;justify-content:center;padding:32px 24px">
+  <div style="font-size:48px;margin-bottom:16px">&#x1F4B0;</div>
+  <div style="font-size:24px;font-weight:700;margin-bottom:6px">Finanzcheck</div>
+  <div style="font-size:14px;color:var(--muted);margin-bottom:32px;text-align:center">Melde dich an um deine Finanzen zu sehen</div>
+  <div style="width:100%;max-width:340px;display:flex;flex-direction:column;gap:12px">
+    <input id="auth-email" type="email" placeholder="E-Mail" autocomplete="email"
+      style="width:100%;background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:14px 16px;color:var(--text);font-size:16px;outline:none"
+      onfocus="this.style.borderColor='var(--accent)'" onblur="this.style.borderColor='var(--border)'"
+    />
+    <input id="auth-password" type="password" placeholder="Passwort" autocomplete="current-password"
+      style="width:100%;background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:14px 16px;color:var(--text);font-size:16px;outline:none"
+      onfocus="this.style.borderColor='var(--accent)'" onblur="this.style.borderColor='var(--border)'"
+      onkeydown="if(event.key==='Enter') doLogin()"
+    />
+    <div id="auth-error" style="font-size:13px;color:var(--red);text-align:center;min-height:18px"></div>
+    <button onclick="doLogin()" id="login-btn"
+      style="width:100%;background:var(--accent);color:#0f172a;border:none;border-radius:12px;padding:14px;font-size:16px;font-weight:700;cursor:pointer">Anmelden</button>
+    <button onclick="doRegister()"
+      style="width:100%;background:transparent;border:1px solid var(--border);border-radius:12px;padding:12px;font-size:14px;color:var(--muted);cursor:pointer">Konto erstellen</button>
+  </div>
+</div>
+
+<div class="tabs-wrapper" style="display:none">
   <div class="tabs-slider" id="tabs-slider">
 
     <!-- DASHBOARD SCREEN -->
@@ -424,6 +451,129 @@
 </div><!-- /tabs-wrapper -->
 
 <script>
+// ── Firebase ──────────────────────────────────────────────────────
+const firebaseConfig = {
+  apiKey: "AIzaSyD5qkVEtJnC1-J2RokEynJvllKoEkH3bWI",
+  authDomain: "finanzen-5d08e.firebaseapp.com",
+  projectId: "finanzen-5d08e",
+  storageBucket: "finanzen-5d08e.firebasestorage.app",
+  messagingSenderId: "795361557910",
+  appId: "1:795361557910:web:146101c4a0cbb15f48b1b7"
+};
+firebase.initializeApp(firebaseConfig);
+const auth = firebase.auth();
+const db   = firebase.firestore();
+let currentUser = null;
+
+// ── Auth UI ────────────────────────────────────────────────────────
+function showLogin() {
+  document.getElementById("login-screen").style.display = "flex";
+  document.querySelector(".tabs-wrapper").style.display = "none";
+}
+function hideLogin() {
+  document.getElementById("login-screen").style.display = "none";
+  document.querySelector(".tabs-wrapper").style.display = "";
+}
+function setAuthError(msg) { document.getElementById("auth-error").textContent = msg; }
+async function doLogin() {
+  const email = document.getElementById("auth-email").value.trim();
+  const pw    = document.getElementById("auth-password").value;
+  setAuthError("");
+  if (!email || !pw) { setAuthError("Bitte E-Mail und Passwort eingeben."); return; }
+  try {
+    document.getElementById("login-btn").textContent = "...";
+    await auth.signInWithEmailAndPassword(email, pw);
+  } catch(e) {
+    document.getElementById("login-btn").textContent = "Anmelden";
+    const msgs = {
+      "auth/user-not-found": "Kein Konto mit dieser E-Mail.",
+      "auth/wrong-password": "Falsches Passwort.",
+      "auth/invalid-email": "Ungueltige E-Mail-Adresse.",
+      "auth/too-many-requests": "Zu viele Versuche - kurz warten.",
+      "auth/invalid-credential": "E-Mail oder Passwort falsch."
+    };
+    setAuthError(msgs[e.code] || e.message);
+  }
+}
+async function doRegister() {
+  const email = document.getElementById("auth-email").value.trim();
+  const pw    = document.getElementById("auth-password").value;
+  setAuthError("");
+  if (!email || !pw) { setAuthError("Bitte E-Mail und Passwort eingeben."); return; }
+  if (pw.length < 6) { setAuthError("Passwort muss mind. 6 Zeichen haben."); return; }
+  try {
+    await auth.createUserWithEmailAndPassword(email, pw);
+  } catch(e) {
+    const msgs = {
+      "auth/email-already-in-use": "Diese E-Mail ist bereits registriert.",
+      "auth/invalid-email": "Ungueltige E-Mail-Adresse.",
+      "auth/weak-password": "Passwort zu schwach."
+    };
+    setAuthError(msgs[e.code] || e.message);
+  }
+}
+function doLogout() {
+  if (!confirm("Abmelden?")) return;
+  auth.signOut();
+}
+
+// ── Firestore helpers ──────────────────────────────────────────────
+async function fsLoadAll() {
+  const txSnap = await db.collection("shared").doc("data").collection("txs").get();
+  const loaded = txSnap.docs.map(d => d.data());
+  if (loaded.length > 0) allTxs = loaded;
+  const settSnap = await db.collection("shared").doc("data").collection("settings").doc("config").get();
+  if (settSnap.exists) {
+    const s = settSnap.data();
+    if (s.userKws)    { userKws    = s.userKws;    localStorage.setItem("finanzcheck_kws", JSON.stringify(userKws)); }
+    if (s.removedKws) { removedKws = s.removedKws; localStorage.setItem("finanzcheck_removed_kws", JSON.stringify(removedKws)); }
+    if (s.userCats)   { userCats   = s.userCats;   localStorage.setItem("finanzcheck_cats", JSON.stringify(userCats)); }
+    if (s.eurToChf)   { eurToChf   = s.eurToChf;   localStorage.setItem("finanzcheck_eurChf", String(eurToChf)); }
+  }
+  Object.entries(userCats).forEach(function(entry) { CATS[entry[0]] = Object.assign({}, entry[1], { _user: true }); });
+}
+
+async function fsSaveTxs() {
+  if (!currentUser) return;
+  const col = db.collection("shared").doc("data").collection("txs");
+  const batch = db.batch();
+  const existing = await col.get();
+  existing.docs.forEach(function(d) { batch.delete(d.ref); });
+  allTxs.forEach(function(t, i) { batch.set(col.doc(String(i)), t); });
+  await batch.commit();
+}
+
+async function fsSaveSettings() {
+  if (!currentUser) return;
+  await db.collection("shared").doc("data").collection("settings").doc("config").set(
+    { userKws: userKws, removedKws: removedKws, userCats: userCats, eurToChf: eurToChf }
+  );
+}
+
+// ── Auth state observer ────────────────────────────────────────────
+auth.onAuthStateChanged(async function(user) {
+  if (user) {
+    currentUser = user;
+    document.querySelectorAll(".topbar-actions").forEach(function(tb) {
+      if (!tb.querySelector(".logout-btn")) {
+        var btn = document.createElement("button");
+        btn.className = "btn logout-btn";
+        btn.textContent = "Abmelden";
+        btn.style.cssText = "font-size:12px;padding:7px 10px;background:transparent;border:1px solid var(--border);color:var(--muted)";
+        btn.onclick = doLogout;
+        tb.appendChild(btn);
+      }
+    });
+    hideLogin();
+    try { await fsLoadAll(); } catch(e) { console.warn("Firestore load error:", e); }
+    render();
+  } else {
+    currentUser = null;
+    allTxs = [];
+    showLogin();
+  }
+});
+
 // ── Kategorien ──
 const CATS = {
   lebensmittel: { label:"Lebensmittel", icon:"🛒", color:"#4ade80", kw:["migros","coop","aldi","lidl","spar","volg","denner","rewe","edeka","netto","penny","kaufland","bäckerei","bakery","metzg","supermarkt"] },
@@ -440,11 +590,11 @@ const CATS = {
 
 // ── Custom keywords ──
 function loadUserKws() { try { return JSON.parse(localStorage.getItem("finanzcheck_kws") || "{}"); } catch { return {}; } }
-function saveUserKws(kws) { localStorage.setItem("finanzcheck_kws", JSON.stringify(kws)); }
+function saveUserKws(kws) { localStorage.setItem("finanzcheck_kws", JSON.stringify(kws)); fsSaveSettings().catch(function(e){console.warn("fs:",e);}); }
 let userKws = loadUserKws();
 
 function loadRemovedKws() { try { return JSON.parse(localStorage.getItem("finanzcheck_removed_kws") || "{}"); } catch { return {}; } }
-function saveRemovedKws(r) { localStorage.setItem("finanzcheck_removed_kws", JSON.stringify(r)); }
+function saveRemovedKws(r) { localStorage.setItem("finanzcheck_removed_kws", JSON.stringify(r)); fsSaveSettings().catch(function(e){console.warn("fs:",e);}); }
 let removedKws = loadRemovedKws();
 
 function allKwsForCat(catKey) {
@@ -478,7 +628,7 @@ function removeUserKw(catKey, kw) {
 }
 
 function loadUserCats() { try { return JSON.parse(localStorage.getItem("finanzcheck_cats") || "{}"); } catch { return {}; } }
-function saveUserCats(cats) { localStorage.setItem("finanzcheck_cats", JSON.stringify(cats)); }
+function saveUserCats(cats) { localStorage.setItem("finanzcheck_cats", JSON.stringify(cats)); fsSaveSettings().catch(function(e){console.warn("fs:",e);}); }
 let userCats = loadUserCats();
 function rebuildCats() {
   Object.keys(CATS).forEach(k => { if (CATS[k]._user) delete CATS[k]; });
@@ -626,7 +776,7 @@ function parseCSV(text) {
 let activeAccount = "all";
 
 function loadExchangeRate() { return parseFloat(localStorage.getItem("finanzcheck_eurChf") || "0.95"); }
-function saveExchangeRate(r) { localStorage.setItem("finanzcheck_eurChf", String(r)); }
+function saveExchangeRate(r) { localStorage.setItem("finanzcheck_eurChf", String(r)); fsSaveSettings().catch(function(e){console.warn("fs:",e);}); }
 let eurToChf = loadExchangeRate(); // e.g. 1 EUR = 0.95 CHF
 
 function currencyForAccount(acc) {
@@ -726,7 +876,7 @@ function showToast(msg) {
 }
 
 // ── State ──
-function saveTxs() { try { localStorage.setItem("finanzcheck_txs", JSON.stringify(allTxs)); } catch(e) { console.warn("Speichern fehlgeschlagen:", e); } }
+function saveTxs() { try { localStorage.setItem("finanzcheck_txs", JSON.stringify(allTxs)); } catch(e) {} fsSaveTxs().catch(function(e){console.warn("Firestore saveTxs:",e);}); }
 function loadTxs() { try { return JSON.parse(localStorage.getItem("finanzcheck_txs") || "[]"); } catch { return []; } }
 
 let allTxs = loadTxs();
