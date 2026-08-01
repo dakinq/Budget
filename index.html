@@ -275,6 +275,23 @@
   <div class="sheet-scroll-inner" id="cat-picker-list"></div>
 </div>
 
+<!-- KEYWORD POPUP -->
+<div id="kw-popup-overlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.55);z-index:1100;align-items:center;justify-content:center;" onclick="if(event.target===this)closeKwPopup(false)">
+  <div style="background:var(--surface);border-radius:20px;padding:24px 20px;width:calc(100% - 48px);max-width:380px;box-shadow:0 8px 32px #0008;">
+    <div style="font-size:15px;font-weight:700;margin-bottom:6px;color:var(--text)" id="kw-popup-title">Keyword speichern?</div>
+    <div style="font-size:13px;color:var(--muted);margin-bottom:16px" id="kw-popup-sub">Dieses Keyword wird genutzt um ähnliche Buchungen automatisch zu kategorisieren.</div>
+    <input id="kw-popup-input" type="text"
+      style="width:100%;box-sizing:border-box;background:var(--surface2);border:1px solid var(--accent);border-radius:12px;padding:11px 14px;color:var(--text);font-size:16px;outline:none;margin-bottom:16px;"
+      placeholder="Keyword eingeben..."
+      onkeydown="if(event.key==='Enter')closeKwPopup(true)"
+    />
+    <div style="display:flex;gap:10px;">
+      <button onclick="closeKwPopup(false)" style="flex:1;padding:11px;border-radius:12px;border:1px solid var(--border);background:transparent;color:var(--muted);font-size:14px;font-weight:600;cursor:pointer">Ohne Keyword</button>
+      <button onclick="closeKwPopup(true)" style="flex:1;padding:11px;border-radius:12px;border:none;background:var(--accent);color:#0f172a;font-size:14px;font-weight:700;cursor:pointer">Speichern</button>
+    </div>
+  </div>
+</div>
+
 <!-- SETTINGS SHEET -->
 <div class="bottom-sheet" id="settings-sheet">
   <div class="sheet-handle" style="cursor:pointer" onclick="closeAllSheets()"></div>
@@ -560,7 +577,16 @@ async function fsLoadAll() {
   const settSnap = await db.collection("shared").doc("data").collection("settings").doc("config").get();
   if (settSnap.exists) {
     const s = settSnap.data();
-    if (s.userKws)    { userKws    = s.userKws;    localStorage.setItem("finanzcheck_kws", JSON.stringify(userKws)); }
+    if (s.userKws) {
+      // Merge: keep any keywords the user may have added before fsLoadAll finished
+      const merged = Object.assign({}, s.userKws);
+      Object.entries(userKws).forEach(function([cat, kws]) {
+        if (!merged[cat]) merged[cat] = [];
+        kws.forEach(function(kw) { if (!merged[cat].includes(kw)) merged[cat].push(kw); });
+      });
+      userKws = merged;
+      localStorage.setItem("finanzcheck_kws", JSON.stringify(userKws));
+    }
     if (s.removedKws) { removedKws = s.removedKws; localStorage.setItem("finanzcheck_removed_kws", JSON.stringify(removedKws)); }
     if (s.userCats)   { userCats   = s.userCats;   localStorage.setItem("finanzcheck_cats", JSON.stringify(userCats)); }
     if (s.eurToChf)   { eurToChf   = s.eurToChf;   localStorage.setItem("finanzcheck_eurChf", String(eurToChf)); }
@@ -579,6 +605,16 @@ async function fsSaveTxs() {
 }
 
 async function fsSaveSettings() {
+  // If currentUser not yet set, wait up to 3s for auth to complete
+  if (!currentUser) {
+    await new Promise(function(resolve) {
+      var waited = 0;
+      var interval = setInterval(function() {
+        waited += 100;
+        if (currentUser || waited >= 3000) { clearInterval(interval); resolve(); }
+      }, 100);
+    });
+  }
   if (!currentUser) return;
   await db.collection("shared").doc("data").collection("settings").doc("config").set(
     { userKws: userKws, removedKws: removedKws, userCats: userCats, eurToChf: eurToChf }
@@ -611,25 +647,25 @@ auth.onAuthStateChanged(async function(user) {
 
 // ── Kategorien ──
 const CATS = {
-  lebensmittel: { label:"Lebensmittel", icon:"🛒", color:"#4ade80", kw:["migros","coop","aldi","lidl","spar","volg","denner","rewe","edeka","netto","penny","kaufland","bäckerei","bakery","metzg","supermarkt"] },
-  restaurant:   { label:"Restaurant",   icon:"🍽", color:"#fb923c", kw:["restaurant","café","cafe","bar","pizza","kebab","sushi","mcdonald","burger king","kfc","starbucks","subway","gasthaus","takeaway","lieferando"] },
-  transport:    { label:"Transport",    icon:"🚗", color:"#60a5fa", kw:["sbb","zvv","bvg","db ag","deutsche bahn","tankstelle","shell","bp ","esso","parkhaus","parking","uber","taxi","flixbus","easyjet","ryanair","swiss"] },
-  shopping:     { label:"Shopping",     icon:"🛍", color:"#c084fc", kw:["amazon","zalando","zara","h&m","ikea","digitec","galaxus","mediamarkt","saturn","globus","interdiscount","apple store","google play"] },
-  drogerie:     { label:"Drogerie",      icon:"🧴", color:"#f472b6", kw:["drogerie","dm ","rossmann","müller","budnikowsky","budni","parfümerie","douglas","friseur","hairdresser","kosmetik","beautysalon"] },
-  medizin:      { label:"Ärzte / Medizin", icon:"🏥", color:"#e879f9", kw:["apotheke","pharmacy","arzt","spital","klinik","zahnarzt","dentist","optiker","physiotherapie","krankenhaus","hospital","labor","praxis","notaufnahme","rezept"] },
-  wohnen:       { label:"Wohnen",       icon:"🏠", color:"#fbbf24", kw:["miete","nebenkosten","strom","ewz","energie","gas","wasser","versicherung","zurich","allianz","axa","helvetia","sunrise","swisscom","salt","upc"] },
-  freizeit:     { label:"Freizeit",     icon:"🎉", color:"#38bdf8", kw:["netflix","spotify","disney","steam","playstation","xbox","nintendo","kino","theater","konzert","booking","airbnb","hotel"] },
+  lebensmittel: { label:"Lebensmittel", icon:"🛒", color:"#4ade80", kw:[] },
+  restaurant:   { label:"Restaurant",   icon:"🍽", color:"#fb923c", kw:[] },
+  transport:    { label:"Transport",    icon:"🚗", color:"#60a5fa", kw:[] },
+  shopping:     { label:"Shopping",     icon:"🛍", color:"#c084fc", kw:[] },
+  drogerie:     { label:"Drogerie",      icon:"🧴", color:"#f472b6", kw:[] },
+  medizin:      { label:"Ärzte / Medizin", icon:"🏥", color:"#e879f9", kw:[] },
+  wohnen:       { label:"Wohnen",       icon:"🏠", color:"#fbbf24", kw:[] },
+  freizeit:     { label:"Freizeit",     icon:"🎉", color:"#38bdf8", kw:[] },
   sonstiges:       { label:"Sonstiges",         icon:"📦", color:"#94a3b8", kw:[] },
   unkategorisiert: { label:"Nicht kategorisiert", icon:"❓", color:"#f87171", kw:[] }
 };
 
 // ── Custom keywords ──
 function loadUserKws() { try { return JSON.parse(localStorage.getItem("finanzcheck_kws") || "{}"); } catch { return {}; } }
-function saveUserKws(kws) { localStorage.setItem("finanzcheck_kws", JSON.stringify(kws)); fsSaveSettings().catch(function(e){console.warn("fs:",e);}); }
+function saveUserKws(kws) { localStorage.setItem("finanzcheck_kws", JSON.stringify(kws)); fsSaveSettings().catch(function(e){console.warn("fs:",e); showToast("⚠️ Keyword nicht in Cloud gespeichert");}); }
 let userKws = loadUserKws();
 
 function loadRemovedKws() { try { return JSON.parse(localStorage.getItem("finanzcheck_removed_kws") || "{}"); } catch { return {}; } }
-function saveRemovedKws(r) { localStorage.setItem("finanzcheck_removed_kws", JSON.stringify(r)); fsSaveSettings().catch(function(e){console.warn("fs:",e);}); }
+function saveRemovedKws(r) { localStorage.setItem("finanzcheck_removed_kws", JSON.stringify(r)); fsSaveSettings().catch(function(e){console.warn("fs:",e); showToast("⚠️ Änderung nicht in Cloud gespeichert");}); }
 let removedKws = loadRemovedKws();
 
 function allKwsForCat(catKey) {
@@ -663,7 +699,7 @@ function removeUserKw(catKey, kw) {
 }
 
 function loadUserCats() { try { return JSON.parse(localStorage.getItem("finanzcheck_cats") || "{}"); } catch { return {}; } }
-function saveUserCats(cats) { localStorage.setItem("finanzcheck_cats", JSON.stringify(cats)); fsSaveSettings().catch(function(e){console.warn("fs:",e);}); }
+function saveUserCats(cats) { localStorage.setItem("finanzcheck_cats", JSON.stringify(cats)); fsSaveSettings().catch(function(e){console.warn("fs:",e); showToast("⚠️ Kategorie nicht in Cloud gespeichert");}); }
 let userCats = loadUserCats();
 function rebuildCats() {
   Object.keys(CATS).forEach(k => { if (CATS[k]._user) delete CATS[k]; });
@@ -1122,22 +1158,52 @@ function openCatPicker(txIdx) {
   openSheet("cat-picker");
 }
 
+let _pendingPickCat = null;
+
 function pickCat(newCat) {
   if (pickerTxIndex === null) return;
   const tx = allTxs[pickerTxIndex];
+  if (newCat === tx.category) { closeAllSheets(); return; }
+  if (newCat === "sonstiges" || newCat === "unkategorisiert") {
+    applyPickCat(newCat, null);
+    return;
+  }
+  // Show keyword popup
+  _pendingPickCat = { newCat: newCat, oldCat: tx.category };
+  const suggested = extractKeyword(tx.description);
+  const allCatsMap = {...CATS, ...userCats};
+  const catLabel = (allCatsMap[newCat] || {}).label || newCat;
+  document.getElementById("kw-popup-title").textContent = `Keyword für ${catLabel}?`;
+  document.getElementById("kw-popup-sub").textContent = `Buchung: „${tx.description || ""}"`;
+  const input = document.getElementById("kw-popup-input");
+  input.value = suggested;
+  const overlay = document.getElementById("kw-popup-overlay");
+  overlay.style.display = "flex";
+  setTimeout(function() { input.focus(); input.select(); }, 80);
+}
+
+function closeKwPopup(save) {
+  const overlay = document.getElementById("kw-popup-overlay");
+  overlay.style.display = "none";
+  const kw = save ? document.getElementById("kw-popup-input").value.toLowerCase().trim() : null;
+  applyPickCat(_pendingPickCat.newCat, kw);
+  _pendingPickCat = null;
+}
+
+function applyPickCat(newCat, kw) {
+  if (pickerTxIndex === null) return;
+  const tx = allTxs[pickerTxIndex];
   const oldCat = tx.category;
-  if (newCat === oldCat) { closeAllSheets(); return; }
-  const kw = extractKeyword(tx.description);
-  if (kw && newCat !== "sonstiges") {
+  if (kw) {
     addUserKw(newCat, kw);
-    if (userKws[oldCat]) removeUserKw(oldCat, kw);
+    if (oldCat && userKws[oldCat]) removeUserKw(oldCat, kw);
   }
   tx.category = newCat;
   tx.manual = true;
 
   // Re-categorize all other non-manual transactions that match the new keyword
   let reCatCount = 0;
-  if (kw && newCat !== "sonstiges") {
+  if (kw) {
     allTxs.forEach(function(t, i) {
       if (i === pickerTxIndex) return;
       if (t.manual) return;
@@ -1153,7 +1219,7 @@ function pickCat(newCat) {
   const allCatsMap = {...CATS, ...userCats};
   const catLabel = (allCatsMap[newCat] || {}).label || newCat;
   const catIcon = (allCatsMap[newCat] || {}).icon || "";
-  const kwMsg = kw ? ` · „${kw}"` : "";
+  const kwMsg = kw ? ` · "${kw}"` : "";
   const reMsg = reCatCount > 0 ? ` · ${reCatCount} weitere` : "";
   showToast(`${catIcon} ${catLabel}${kwMsg}${reMsg}`);
 }
