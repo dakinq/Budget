@@ -276,6 +276,17 @@
 </div>
 
 <!-- KEYWORD POPUP -->
+<!-- CONFIRM POPUP -->
+<div id="confirm-overlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.55);z-index:1200;align-items:center;justify-content:center;">
+  <div style="background:var(--surface);border-radius:20px;padding:24px 20px;width:calc(100% - 48px);max-width:340px;box-shadow:0 8px 32px #0008;">
+    <div style="font-size:15px;font-weight:600;color:var(--text);margin-bottom:20px;line-height:1.4" id="confirm-msg"></div>
+    <div style="display:flex;gap:10px;">
+      <button onclick="confirmNo()" style="flex:1;padding:11px;border-radius:12px;border:1px solid var(--border);background:transparent;color:var(--muted);font-size:14px;font-weight:600;cursor:pointer">Abbrechen</button>
+      <button onclick="confirmYes()" style="flex:1;padding:11px;border-radius:12px;border:none;background:#f87171;color:#fff;font-size:14px;font-weight:700;cursor:pointer">Bestätigen</button>
+    </div>
+  </div>
+</div>
+
 <div id="kw-popup-overlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.55);z-index:1100;align-items:center;justify-content:center;" onclick="if(event.target===this)closeKwPopup(false)">
   <div style="background:var(--surface);border-radius:20px;padding:24px 20px;width:calc(100% - 48px);max-width:380px;box-shadow:0 8px 32px #0008;">
     <div style="font-size:15px;font-weight:700;margin-bottom:6px;color:var(--text)" id="kw-popup-title">Keyword speichern?</div>
@@ -306,6 +317,7 @@
   <div class="sheet-handle" style="cursor:pointer" onclick="closeAllSheets()"></div>
   <div class="sheet-header">
     <span class="sheet-title" id="cat-detail-title">Kategorie</span>
+    <button id="cat-detail-edit-btn" onclick="openEditCat()" style="background:none;border:1px solid var(--border);color:var(--muted);font-size:13px;font-weight:600;cursor:pointer;padding:5px 12px;border-radius:8px;margin-right:4px">✏️ Bearbeiten</button>
     <button onclick="closeAllSheets()" style="background:none;border:none;color:var(--muted);font-size:22px;cursor:pointer;padding:0 4px">×</button>
   </div>
   <div class="sheet-scroll-inner" id="cat-detail-content"></div>
@@ -315,7 +327,7 @@
 <div class="bottom-sheet" id="new-cat-sheet">
   <div class="sheet-handle" style="cursor:pointer" onclick="closeNewCat()"></div>
   <div class="sheet-header">
-    <span class="sheet-title">Neue Kategorie</span>
+    <span class="sheet-title" id="new-cat-sheet-title">Neue Kategorie</span>
   </div>
   <div class="sheet-scroll-inner" style="padding:20px;display:flex;flex-direction:column;gap:16px">
     <div>
@@ -330,11 +342,7 @@
       <div style="font-size:12px;color:var(--muted);margin-bottom:8px">FARBE</div>
       <div class="color-swatches" id="color-swatches"></div>
     </div>
-    <div>
-      <div style="font-size:12px;color:var(--muted);margin-bottom:8px">KEYWORDS (optional)</div>
-      <input id="new-cat-kw-input" class="new-cat-name-input" placeholder="z.B. zalando, amazon (kommagetrennt)" style="width:100%" />
-    </div>
-    <button onclick="saveNewCat()" style="width:100%;background:var(--accent);color:#0f172a;border:none;border-radius:12px;padding:12px;font-size:15px;font-weight:700;cursor:pointer">Kategorie erstellen</button>
+    <button id="new-cat-save-btn" onclick="saveNewCat()" style="width:100%;background:var(--accent);color:#0f172a;border:none;border-radius:12px;padding:12px;font-size:15px;font-weight:700;cursor:pointer">Kategorie erstellen</button>
   </div>
 </div>
 
@@ -553,7 +561,10 @@ async function doRegister() {
   }
 }
 function doLogout() {
-  if (!confirm("Abmelden?")) return;
+  showConfirm("Wirklich abmelden?", function() { _doLogoutConfirmed(); });
+  return;
+}
+async function _doLogoutConfirmed() {
   auth.signOut();
 }
 
@@ -636,7 +647,7 @@ auth.onAuthStateChanged(async function(user) {
       }
     });
     hideLogin();
-    try { await fsLoadAll(); } catch(e) { console.warn("Firestore load error:", e); }
+    try { await fsLoadAll(); } catch(e) { console.warn("Firestore load error:", e); showToast("⚠️ Cloud-Daten konnten nicht geladen werden"); }
     render();
   } else {
     currentUser = null;
@@ -702,8 +713,19 @@ function loadUserCats() { try { return JSON.parse(localStorage.getItem("finanzch
 function saveUserCats(cats) { localStorage.setItem("finanzcheck_cats", JSON.stringify(cats)); fsSaveSettings().catch(function(e){console.warn("fs:",e); showToast("⚠️ Kategorie nicht in Cloud gespeichert");}); }
 let userCats = loadUserCats();
 function rebuildCats() {
-  Object.keys(CATS).forEach(k => { if (CATS[k]._user) delete CATS[k]; });
-  Object.entries(userCats).forEach(([k,c]) => { CATS[k] = { ...c, _user: true, kw: [] }; });
+  // Remove only user-created (non-override) cats first
+  Object.keys(CATS).forEach(k => { if (CATS[k]._user && !CATS[k]._builtinOverride) delete CATS[k]; });
+  Object.entries(userCats).forEach(([k,c]) => {
+    if (c._builtinOverride && CATS[k]) {
+      // Update built-in cat properties without replacing it entirely
+      CATS[k].label = c.label;
+      CATS[k].icon  = c.icon;
+      CATS[k].color = c.color;
+      CATS[k]._builtinOverride = true;
+    } else if (!c._builtinOverride) {
+      CATS[k] = { ...c, _user: true, kw: [] };
+    }
+  });
 }
 rebuildCats();
 
@@ -1062,6 +1084,24 @@ function openSheet(id) {
 function closeAllSheets() {
   document.getElementById("backdrop").classList.remove("open");
   document.querySelectorAll(".bottom-sheet").forEach(s=>s.classList.remove("open"));
+  pickerTxIndex = null;
+  _pendingPickCat = null;
+}
+
+// ── Confirm Popup ──
+let _confirmCallback = null;
+function showConfirm(msg, onConfirm) {
+  _confirmCallback = onConfirm;
+  document.getElementById("confirm-msg").textContent = msg;
+  document.getElementById("confirm-overlay").style.display = "flex";
+}
+function confirmYes() {
+  document.getElementById("confirm-overlay").style.display = "none";
+  if (_confirmCallback) { _confirmCallback(); _confirmCallback = null; }
+}
+function confirmNo() {
+  document.getElementById("confirm-overlay").style.display = "none";
+  _confirmCallback = null;
 }
 
 // ── Category Picker ──
@@ -1114,11 +1154,13 @@ function openCatPicker(txIdx) {
       </div>`;
   }
 
+  const showReset = tx.category !== "unkategorisiert";
   document.getElementById("picker-desc-preview").innerHTML = `
     <div style="padding:10px 16px 0;font-size:12px;color:var(--muted)">
       Buchung: <span style="color:var(--text);font-weight:500">${desc}</span>
     </div>
     ${reasonHtml}
+    ${showReset ? `<div style="padding:4px 16px 0"><button onclick="applyPickCat('unkategorisiert',null)" style="width:100%;padding:8px;border-radius:10px;border:1px dashed var(--border);background:transparent;color:var(--muted);font-size:13px;cursor:pointer">↩ Kategorie entfernen</button></div>` : ""}
     <div style="padding:8px 16px 4px;font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:0.5px">Kategorie wechseln</div>
   `;
 
@@ -1372,6 +1414,7 @@ function openCatDetail(catKey) {
 
   document.getElementById("cat-detail-title").innerHTML =
     `<span style="margin-right:8px">${c.icon}</span>${c.label}`;
+  document.getElementById("cat-detail-edit-btn").dataset.catKey = catKey;
 
   document.getElementById("cat-detail-content").innerHTML = `
     <div style="padding:16px 20px;display:flex;gap:12px;border-bottom:1px solid var(--border)">
@@ -1390,8 +1433,10 @@ function openCatDetail(catKey) {
       <div style="display:flex;flex-wrap:wrap;gap:6px">
         ${allActive.length ? allActive.map(w => {
           const isBuiltIn = builtInKws.includes(w);
+          const hits = allTxs.filter(t => (t.description||"").toLowerCase().includes(w)).length;
           return `<span style="display:inline-flex;align-items:center;gap:5px;background:${c.color}22;border:1px solid ${c.color}66;color:${c.color};border-radius:20px;padding:5px 10px;font-size:13px;font-weight:600">
             ${w}${isBuiltIn ? ' <span style="font-size:9px;opacity:0.6;font-weight:400">●</span>' : ''}
+            ${hits > 0 ? `<span style="font-size:10px;background:${c.color}33;border-radius:10px;padding:1px 5px;font-weight:700">${hits}</span>` : ''}
             <button onclick="delKwFromDetail('${catKey}','${w}')" style="background:none;border:none;color:${c.color};cursor:pointer;font-size:16px;padding:0;line-height:1;opacity:0.6">×</button>
           </span>`;
         }).join("") : `<span style="color:var(--muted);font-size:13px">Keine Keywords</span>`}
@@ -1487,14 +1532,38 @@ function delKw(catKey, kw) { removeUserKw(catKey, kw); renderSettings(); showToa
 const PALETTE = ["#f87171","#fb923c","#fbbf24","#4ade80","#34d399","#38bdf8","#60a5fa","#c084fc","#f472b6","#94a3b8"];
 let selectedColor = PALETTE[0];
 
+let _editCatKey = null; // null = new, string = editing existing
+
 function openNewCat() {
+  _editCatKey = null;
+  document.getElementById("new-cat-sheet-title").textContent = "Neue Kategorie";
+  document.getElementById("new-cat-save-btn").textContent = "Kategorie erstellen";
   document.getElementById("new-cat-emoji-input").value = "";
   document.getElementById("new-cat-emoji-preview").textContent = "✨";
   document.getElementById("new-cat-name-input").value = "";
-  document.getElementById("new-cat-kw-input").value = "";
   selectedColor = PALETTE[5];
   document.getElementById("color-swatches").innerHTML = PALETTE.map(c=>
     `<div class="color-swatch${c===selectedColor?" selected":""}" style="background:${c}" onclick="selectColor('${c}')"></div>`
+  ).join("");
+  document.querySelectorAll(".bottom-sheet").forEach(s=>s.classList.remove("open"));
+  document.getElementById("backdrop").classList.add("open");
+  document.getElementById("new-cat-sheet").classList.add("open");
+}
+
+function openEditCat() {
+  const key = document.getElementById("cat-detail-edit-btn").dataset.catKey;
+  if (!key) return;
+  const c = CATS[key];
+  if (!c) return;
+  _editCatKey = key;
+  document.getElementById("new-cat-sheet-title").textContent = "Kategorie bearbeiten";
+  document.getElementById("new-cat-save-btn").textContent = "Änderungen speichern";
+  document.getElementById("new-cat-emoji-input").value = c.icon || "";
+  document.getElementById("new-cat-emoji-preview").textContent = c.icon || "✨";
+  document.getElementById("new-cat-name-input").value = c.label || "";
+  selectedColor = c.color || PALETTE[5];
+  document.getElementById("color-swatches").innerHTML = PALETTE.map(col=>
+    `<div class="color-swatch${col===selectedColor?" selected":""}" style="background:${col}" onclick="selectColor('${col}')"></div>`
   ).join("");
   document.querySelectorAll(".bottom-sheet").forEach(s=>s.classList.remove("open"));
   document.getElementById("backdrop").classList.add("open");
@@ -1521,21 +1590,40 @@ function updateEmojiPreview() {
 function saveNewCat() {
   const emoji = document.getElementById("new-cat-emoji-input").value.trim() || "📁";
   const name = document.getElementById("new-cat-name-input").value.trim();
-  const kwRaw = document.getElementById("new-cat-kw-input").value;
   if (!name) { showToast("⚠️ Bitte einen Namen eingeben"); return; }
+
+  if (_editCatKey) {
+    // EDIT mode: update icon, label, color for any category
+    const key = _editCatKey;
+    CATS[key].label = name;
+    CATS[key].icon  = emoji;
+    CATS[key].color = selectedColor;
+    // If it's a user-created cat, persist it
+    if (userCats[key]) {
+      userCats[key] = { ...userCats[key], label: name, icon: emoji, color: selectedColor };
+    } else {
+      // Built-in cat: save overrides in userCats so they survive reload
+      userCats[key] = { label: name, icon: emoji, color: selectedColor, _builtinOverride: true };
+    }
+    saveUserCats(userCats);
+    rebuildCats();
+    closeAllSheets(); render(); renderSettings();
+    showToast(`✅ „${name}" gespeichert`);
+    return;
+  }
+
+  // CREATE mode
   const key = "custom_" + name.toLowerCase().replace(/\s+/g,"_").replace(/[^a-z0-9_]/g,"") + "_" + Date.now();
-  const kws = kwRaw.split(",").map(w=>w.trim().toLowerCase()).filter(Boolean);
   userCats[key] = { label: name, icon: emoji, color: selectedColor }; saveUserCats(userCats);
-  if (kws.length) { userKws[key] = kws; saveUserKws(userKws); }
   rebuildCats();
-  let recatCount = 0;
-  if (kws.length) { allTxs.forEach(t => { const l=(t.description||"").toLowerCase(); if(kws.some(w=>l.includes(w))){ t.category=key; recatCount++; } }); }
   closeAllSheets(); render(); renderSettings();
-  showToast(`✅ „${name}" erstellt${recatCount>0?` · ${recatCount} Buchungen neu kategorisiert`:""}`);
+  showToast(`✅ „${name}" erstellt`);
 }
 
 function deleteUserCat(key) {
-  if (!confirm(`Kategorie „${CATS[key]?.label}" löschen? Buchungen werden zu Sonstiges verschoben.`)) return;
+  showConfirm(`Kategorie „${CATS[key]?.label}" löschen? Buchungen werden zu Sonstiges verschoben.`, function() { _deleteUserCatConfirmed(key); });
+}
+function _deleteUserCatConfirmed(key) {
   allTxs.forEach(t => { if (t.category === key) t.category = "sonstiges"; });
   saveTxs();
   delete userCats[key]; saveUserCats(userCats);
@@ -1797,11 +1885,12 @@ function showImportReport(opts) {
 function triggerUpload(){ document.getElementById("csv-input").click(); }
 
 function clearData(){
-  if(!confirm("Alle Daten löschen?")) return;
-  allTxs=[]; activeMonth=null; activeCat=null; activeView=null; activeAccount="all";
-  saveTxs();
-  setAccount("all");
-  render();
+  showConfirm("Alle Buchungen löschen? Diese Aktion kann nicht rückgängig gemacht werden.", function() {
+    allTxs=[]; activeMonth=null; activeCat=null; activeView=null; activeAccount="all";
+    saveTxs();
+    setAccount("all");
+    render();
+  });
 }
 
 document.getElementById("csv-input").addEventListener("change", async e=>{
@@ -2004,7 +2093,8 @@ function renderPrognose() {
     document.getElementById("bar-legend").innerHTML = catBarData.map(c => {
       const cat = allCatsMap[c.key];
       if (!cat) return "";
-      return `<div style="display:flex;align-items:center;gap:4px;font-size:11px;color:var(--muted)">
+      const isActive = activePrognoseCat === c.key;
+      return `<div onclick="selectPrognoseCat('${c.key}')" style="display:flex;align-items:center;gap:5px;font-size:12px;cursor:pointer;padding:4px 8px;border-radius:8px;border:1px solid ${isActive ? cat.color : 'transparent'};background:${isActive ? cat.color + '22' : 'transparent'};color:${isActive ? cat.color : 'var(--muted)'};transition:all .15s;user-select:none">
         <span style="width:10px;height:10px;border-radius:3px;background:${cat.color};flex-shrink:0;display:inline-block"></span>
         ${cat.icon} ${cat.label}
       </div>`;
