@@ -78,7 +78,6 @@
       padding: 12px 20px;
       background: var(--surface); border-bottom: 1px solid var(--border);
       position: sticky; top: 0; z-index: 10;
-      -webkit-backdrop-filter: blur(12px); backdrop-filter: blur(12px);
     }
     .topbar-left { display: flex; align-items: center; gap: 8px; }
     .app-title { font-size: 18px; font-weight: 700; }
@@ -402,6 +401,7 @@
           <span class="app-title">Finanzcheck</span>
         </div>
         <div class="topbar-actions">
+          <button class="btn primary" onclick="triggerUpload()">📂 CSV</button>
           <button class="btn" onclick="openSettings()" style="font-size:16px;padding:7px 10px">⚙️</button>
           <button class="btn danger" onclick="clearData()">🗑</button>
         </div>
@@ -456,6 +456,7 @@
           <span class="app-title">Prognose</span>
         </div>
         <div class="topbar-actions">
+          <button class="btn primary" onclick="triggerUpload()">📂 CSV</button>
           <button class="btn" onclick="openSettings()" style="font-size:16px;padding:7px 10px">⚙️</button>
           <button class="btn danger" onclick="clearData()">🗑</button>
         </div>
@@ -635,7 +636,16 @@ async function fsSaveSettings() {
 auth.onAuthStateChanged(async function(user) {
   if (user) {
     currentUser = user;
-
+    document.querySelectorAll(".topbar-actions").forEach(function(tb) {
+      if (!tb.querySelector(".logout-btn")) {
+        var btn = document.createElement("button");
+        btn.className = "btn logout-btn";
+        btn.textContent = "Abmelden";
+        btn.style.cssText = "font-size:12px;padding:7px 10px;background:transparent;border:1px solid var(--border);color:var(--muted)";
+        btn.onclick = doLogout;
+        tb.appendChild(btn);
+      }
+    });
     hideLogin();
     try { await fsLoadAll(); } catch(e) { console.warn("Firestore load error:", e); showToast("⚠️ Cloud-Daten konnten nicht geladen werden"); }
     render();
@@ -1325,46 +1335,7 @@ function renderSettings() {
       + "</div>"
       + "</div>";
   }
-  const uncatCount = allTxs.filter(t => !t.manual && t.category === "unkategorisiert").length;
-  const recatBlock = \`
-    <div style="padding:16px 20px;border-bottom:1px solid var(--border)">
-      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">
-        <span style="font-size:15px;font-weight:600">🔄 Neu kategorisieren</span>
-        \${uncatCount > 0 ? \`<span style="font-size:12px;color:var(--red);font-weight:600">\${uncatCount} unkategorisiert</span>\` : \`<span style="font-size:12px;color:var(--green)">✅ alle kategorisiert</span>\`}
-      </div>
-      <div style="font-size:12px;color:var(--muted);margin-bottom:10px">Wendet alle gespeicherten Keywords erneut auf bestehende Buchungen an. Manuell zugewiesene bleiben unverändert.</div>
-      <button onclick="recategorizeAll()" style="width:100%;background:var(--surface2);border:1px solid var(--accent);color:var(--accent);border-radius:10px;padding:9px;font-size:14px;font-weight:700;cursor:pointer">Jetzt neu kategorisieren</button>
-    </div>\`;
-  const csvBlock = `
-    <div style="padding:16px 20px;border-bottom:1px solid var(--border)">
-      <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
-        <span style="font-size:18px">📂</span>
-        <span style="font-size:15px;font-weight:600">CSV importieren</span>
-      </div>
-      <div style="font-size:12px;color:var(--muted);margin-bottom:10px">Bankdaten als CSV-Datei hochladen und importieren.</div>
-      <button onclick="triggerUpload();closeAllSheets();" style="width:100%;background:var(--accent);color:#0f172a;border:none;border-radius:10px;padding:9px;font-size:14px;font-weight:700;cursor:pointer">📂 CSV hochladen</button>
-    </div>`;
-  const logoutBlock = `
-    <div style="padding:16px 20px;border-bottom:1px solid var(--border)">
-      <button onclick="doLogout()" style="width:100%;background:transparent;border:1px solid var(--border);color:var(--muted);border-radius:10px;padding:9px;font-size:14px;font-weight:600;cursor:pointer">Abmelden</button>
-    </div>`;
-  document.getElementById("settings-content").innerHTML = ignoredEntry + csvBlock + recatBlock + exchangeBlock + newCatBtn + catBlocks + logoutBlock;
-}
-
-function recategorizeAll() {
-  let changed = 0;
-  allTxs.forEach(t => {
-    if (t.manual) return;
-    const newCat = categorize(t.description);
-    if (newCat !== t.category) {
-      t.category = newCat;
-      changed++;
-    }
-  });
-  saveTxs();
-  render();
-  renderSettings();
-  showToast(changed > 0 ? \`✅ \${changed} Buchungen neu kategorisiert\` : "✅ Alles bereits kategorisiert");
+  document.getElementById("settings-content").innerHTML = ignoredEntry + exchangeBlock + newCatBtn + catBlocks;
 }
 
 function unignoreTx(idx) {
