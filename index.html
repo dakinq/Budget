@@ -94,10 +94,13 @@
 
     /* Burger button */
     .burger-btn {
-      display: flex; flex-direction: column; justify-content: center; gap: 5px;
-      width: 38px; height: 38px; background: var(--surface2);
-      border: 1px solid var(--border); border-radius: 10px;
-      cursor: pointer; padding: 8px 9px; flex-shrink: 0;
+      display: flex; align-items: center; justify-content: center;
+      width: 38px; height: 38px; background: none;
+      border: none;
+      border-radius: 10px;
+      cursor: pointer; flex-shrink: 0;
+      font-size: 22px; color: var(--text);
+      line-height: 1;
     }
     .burger-btn span {
       display: block; height: 2px; width: 100%; background: var(--text);
@@ -515,12 +518,7 @@
           <span style="font-size:22px">💰</span>
           <span class="app-title">Finanzcheck</span>
         </div>
-        <button class="burger-btn" onclick="openBurger()" aria-label="Menü">
-          <span></span><span></span><span></span>
-        </button>
-      </div>
-
-      <!-- Account Switcher -->
+        <button class="burger-btn" onclick="openBurger()" aria-label="Menü">☰</button>
       <div class="account-switcher" id="account-switcher-dash">
         <button class="account-btn active" id="acc-btn-all" onclick="setAccount('all')">
           Alle Konten
@@ -577,9 +575,7 @@
           <span style="font-size:22px">📈</span>
           <span class="app-title">Prognose</span>
         </div>
-        <button class="burger-btn" onclick="openBurger()" aria-label="Menü">
-          <span></span><span></span><span></span>
-        </button>
+        <button class="burger-btn" onclick="openBurger()" aria-label="Menü">☰</button>
       </div>
 
       <!-- Account Switcher (Prognose) -->
