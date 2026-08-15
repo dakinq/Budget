@@ -165,6 +165,51 @@
     /* Bar chart */
     .bar-wrap { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 16px; }
 
+    /* Bar legend */
+    #bar-legend {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 6px;
+      padding: 10px 4px 0;
+      max-height: 180px;
+      overflow-y: auto;
+    }
+    #bar-legend::-webkit-scrollbar { display: none; }
+    .legend-chip {
+      display: flex; align-items: center; gap: 8px;
+      padding: 7px 10px; border-radius: 10px;
+      cursor: pointer;
+      border: 1.5px solid transparent;
+      background: var(--surface2);
+      transition: all .15s;
+      user-select: none;
+      overflow: hidden;
+    }
+    .legend-chip:active { opacity: 0.75; }
+    .legend-chip.active {
+      border-color: currentColor;
+    }
+    .legend-chip-dot {
+      width: 10px; height: 10px; border-radius: 3px;
+      flex-shrink: 0;
+    }
+    .legend-chip-label {
+      font-size: 12px; font-weight: 500;
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+      color: var(--muted);
+    }
+    .legend-chip.active .legend-chip-label { color: currentColor; font-weight: 600; }
+    .legend-back-btn {
+      grid-column: 1 / -1;
+      display: flex; align-items: center; gap: 8px;
+      padding: 8px 12px; border-radius: 10px;
+      border: 1.5px solid var(--border);
+      background: var(--surface2); color: var(--muted);
+      font-size: 13px; font-weight: 600; cursor: pointer;
+      width: 100%;
+    }
+    .legend-back-btn:active { opacity: 0.75; }
+
     /* TX list */
     .tx-list { display: flex; flex-direction: column; gap: 2px; }
     .tx-row { display: flex; align-items: center; gap: 12px; padding: 10px 12px; background: var(--surface); border-radius: 12px; cursor: pointer; }
@@ -562,7 +607,7 @@
         <div class="sec">
           <div class="sec-title" id="bar-chart-title">Monatsverlauf — Ausgaben</div>
           <div class="bar-wrap"><canvas id="bar-long" width="280" height="160" style="width:100%;height:auto"></canvas></div>
-          <div id="bar-legend" style="display:flex;flex-wrap:wrap;gap:6px 12px;padding:8px 4px 0"></div>
+          <div id="bar-legend"></div>
         </div>
         <div class="cards" id="prog-stats"></div>
         <div class="sec">
@@ -2279,7 +2324,7 @@ function renderPrognose() {
     drawStackedBar(barCanvas, months.map(m => ml(m).split(" ")[0]), [{ color: cat.color, values: catVals }], catVals);
     document.getElementById("bar-chart-title").textContent = `${cat.icon} ${cat.label} — Monatsverlauf`;
     document.getElementById("bar-legend").innerHTML =
-      `<button onclick="selectPrognoseCat(null)" style="background:none;border:1px solid var(--border);border-radius:8px;color:var(--muted);font-size:12px;padding:3px 10px;cursor:pointer">← Alle Kategorien</button>`;
+      `<button class="legend-back-btn" onclick="selectPrognoseCat(null)">← Alle Kategorien</button>`;
   } else {
     const catBarData = allCatKeys.map(k => {
       const color = (allCatsMap[k] || {}).color || "#94a3b8";
@@ -2294,9 +2339,12 @@ function renderPrognose() {
       const cat = allCatsMap[c.key];
       if (!cat) return "";
       const isActive = activePrognoseCat === c.key;
-      return `<div onclick="selectPrognoseCat('${c.key}')" style="display:flex;align-items:center;gap:5px;font-size:12px;cursor:pointer;padding:4px 8px;border-radius:8px;border:1px solid ${isActive ? cat.color : 'transparent'};background:${isActive ? cat.color + '22' : 'transparent'};color:${isActive ? cat.color : 'var(--muted)'};transition:all .15s;user-select:none">
-        <span style="width:10px;height:10px;border-radius:3px;background:${cat.color};flex-shrink:0;display:inline-block"></span>
-        ${cat.icon} ${cat.label}
+      return `<div
+        onclick="selectPrognoseCat('${c.key}')"
+        class="legend-chip${isActive ? ' active' : ''}"
+        style="color:${cat.color}${isActive ? ';background:' + cat.color + '18' : ''}">
+        <span class="legend-chip-dot" style="background:${cat.color}"></span>
+        <span class="legend-chip-label">${cat.icon} ${cat.label}</span>
       </div>`;
     }).join("");
   }
