@@ -402,6 +402,7 @@
         </div>
         <div class="topbar-actions">
           <button class="btn primary" onclick="triggerUpload()">📂 CSV</button>
+          <button class="btn" id="recat-btn" onclick="reCategorizeAll()" title="Unkategorisierte Buchungen neu kategorisieren" style="font-size:16px;padding:7px 10px">🔄</button>
           <button class="btn" onclick="openSettings()" style="font-size:16px;padding:7px 10px">⚙️</button>
           <button class="btn danger" onclick="clearData()">🗑</button>
         </div>
@@ -1485,6 +1486,29 @@ function applyKeywordToCat(catKey, kw) {
   return count;
 }
 
+function reCategorizeAll() {
+  const uncatTxs = allTxs.filter(t => !t.manual && t.category === "unkategorisiert");
+  if (uncatTxs.length === 0) {
+    showToast("✅ Keine unkategorisierten Buchungen");
+    return;
+  }
+  let count = 0;
+  uncatTxs.forEach(t => {
+    const newCat = categorize(t.description);
+    if (newCat !== "unkategorisiert") {
+      t.category = newCat;
+      count++;
+    }
+  });
+  if (count > 0) {
+    saveTxs();
+    render();
+    showToast(`✅ ${count} Buchung${count !== 1 ? "en" : ""} neu kategorisiert`);
+  } else {
+    showToast("ℹ️ Keine passenden Keywords gefunden");
+  }
+}
+
 function addKwFromDetail(catKey) {
   const input = document.getElementById("cat-detail-kw-input");
   const kw = (input.value || "").trim().toLowerCase();
@@ -1522,8 +1546,15 @@ function addKwFromInput(catKey) {
   const input = document.getElementById("kw-input-"+catKey);
   const kw = (input.value||"").trim().toLowerCase();
   if (!kw) return;
-  if (addUserKw(catKey, kw)) { input.value = ""; renderSettings(); showToast(`✅ „${kw}" zu ${CATS[catKey].label} hinzugefügt`); }
-  else { showToast("⚠️ Keyword bereits vorhanden"); }
+  if (addUserKw(catKey, kw)) {
+    const count = applyKeywordToCat(catKey, kw);
+    input.value = ""; renderSettings();
+    if (count > 0) {
+      showToast(`✅ „${kw}" · ${count} Buchung${count !== 1 ? "en" : ""} neu kategorisiert`);
+    } else {
+      showToast(`✅ „${kw}" zu ${CATS[catKey].label} hinzugefügt`);
+    }
+  } else { showToast("⚠️ Keyword bereits vorhanden"); }
 }
 
 function delKw(catKey, kw) { removeUserKw(catKey, kw); renderSettings(); showToast(`🗑 „${kw}" entfernt`); }
