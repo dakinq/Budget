@@ -491,21 +491,21 @@
   <div style="font-size:48px;margin-bottom:16px">&#x1F4B0;</div>
   <div style="font-size:24px;font-weight:700;margin-bottom:6px">Finanzcheck</div>
   <div style="font-size:14px;color:var(--muted);margin-bottom:32px;text-align:center">Melde dich an um deine Finanzen zu sehen</div>
-  <form onsubmit="doLogin();return false;" style="width:100%;max-width:340px;display:flex;flex-direction:column;gap:12px">
+  <div style="width:100%;max-width:340px;display:flex;flex-direction:column;gap:12px">
     <input id="auth-email" type="email" placeholder="E-Mail" autocomplete="email"
       style="width:100%;background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:14px 16px;color:var(--text);font-size:16px;outline:none"
       onfocus="this.style.borderColor='var(--accent)'" onblur="this.style.borderColor='var(--border)'"
     />
-    <input id="auth-password" type="password" placeholder="Passwort" autocomplete="current-password"
+    <input id="auth-password" type="password" placeholder="Passwort" autocomplete="current-password" onkeydown="if(event.key==='Enter')doLogin()"
       style="width:100%;background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:14px 16px;color:var(--text);font-size:16px;outline:none"
       onfocus="this.style.borderColor='var(--accent)'" onblur="this.style.borderColor='var(--border)'"
     />
     <div id="auth-error" style="font-size:13px;color:var(--red);text-align:center;min-height:18px"></div>
-    <button type="submit" id="login-btn"
+    <button type="button" id="login-btn" onclick="doLogin()"
       style="width:100%;background:var(--accent);color:#0f172a;border:none;border-radius:12px;padding:14px;font-size:16px;font-weight:700;cursor:pointer">Anmelden</button>
     <button type="button" onclick="doRegister()"
       style="width:100%;background:transparent;border:1px solid var(--border);border-radius:12px;padding:12px;font-size:14px;color:var(--muted);cursor:pointer">Konto erstellen</button>
-  </form>
+  </div>
 </div>
 
 <div class="tabs-wrapper" style="display:none">
