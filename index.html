@@ -402,6 +402,10 @@
       <span class="burger-row-icon">⚙️</span>
       <span>Einstellungen</span>
     </div>
+    <div class="burger-row" onclick="closeBurgerThen(openFsLog)">
+      <span class="burger-row-icon">📋</span>
+      <span>Firestore Log</span>
+    </div>
     <div class="burger-row danger" onclick="closeBurgerThen(clearData)">
       <span class="burger-row-icon">🗑</span>
       <span>Alle Daten löschen</span>
@@ -411,6 +415,16 @@
       <span>Abmelden</span>
     </div>
   </div>
+</div>
+
+<!-- FIRESTORE LOG SHEET -->
+<div class="bottom-sheet" id="fslog-sheet">
+  <div class="sheet-handle" style="cursor:pointer" onclick="closeAllSheets()"></div>
+  <div class="sheet-header" style="display:flex;align-items:center;justify-content:space-between;padding-right:20px">
+    <span class="sheet-title">📋 Firestore Log</span>
+    <button onclick="copyFsLog()" style="background:var(--accent);color:#0f172a;border:none;border-radius:8px;padding:6px 14px;font-size:13px;font-weight:700;cursor:pointer">Kopieren</button>
+  </div>
+  <div class="sheet-scroll-inner" id="fslog-content" style="font-family:monospace;font-size:12px;padding:12px 16px;"></div>
 </div>
 
 <!-- YEAR PICKER SHEET -->
@@ -699,6 +713,42 @@ async function _doLogoutConfirmed() {
 }
 
 // ── Firestore helpers ──────────────────────────────────────────────
+
+// ── Log system ──
+const _fsLogEntries = [];
+function fsLog(msg, type) {
+  // type: 'info' | 'ok' | 'err'
+  const t = new Date();
+  const ts = t.toTimeString().slice(0,8) + '.' + String(t.getMilliseconds()).padStart(3,'0');
+  const icon = type === 'ok' ? '✅' : type === 'err' ? '❌' : 'ℹ️';
+  _fsLogEntries.push(ts + ' ' + icon + ' ' + msg);
+  console.log('[FS]', ts, icon, msg);
+}
+function openFsLog() {
+  const el = document.getElementById('fslog-content');
+  if (_fsLogEntries.length === 0) {
+    el.innerHTML = '<div style="color:var(--muted);padding:8px">Noch keine Einträge.</div>';
+  } else {
+    el.innerHTML = _fsLogEntries.map(function(e) {
+      const color = e.includes('❌') ? 'var(--red)' : e.includes('✅') ? 'var(--green)' : 'var(--fg)';
+      return '<div style="color:' + color + ';padding:3px 0;border-bottom:1px solid var(--border);word-break:break-all">' + e + '</div>';
+    }).join('');
+  }
+  openSheet('fslog-sheet');
+}
+function copyFsLog() {
+  const text = _fsLogEntries.join('\n');
+  navigator.clipboard.writeText(text).then(function() {
+    showToast('📋 Log kopiert');
+  }).catch(function() {
+    // fallback
+    const ta = document.createElement('textarea');
+    ta.value = text; document.body.appendChild(ta);
+    ta.select(); document.execCommand('copy');
+    document.body.removeChild(ta);
+    showToast('📋 Log kopiert');
+  });
+}
 const DEFAULT_CATS = {
   lebensmittel:    { label:"Lebensmittel",         icon:"🛒", color:"#4ade80", kw:[] },
   restaurant:      { label:"Restaurant",            icon:"🍽", color:"#fb923c", kw:[] },
@@ -713,16 +763,24 @@ const DEFAULT_CATS = {
 };
 
 async function fsSaveCats() {
-  if (!currentUser) return;
-  const col = db.collection("shared").doc("data").collection("cats");
-  const batch = db.batch();
-  Object.entries(CATS).forEach(function([key, cat]) {
-    batch.set(col.doc(key), { label: cat.label, icon: cat.icon, color: cat.color, kw: cat.kw || [] });
-  });
-  await batch.commit();
+  if (!currentUser) { fsLog('fsSaveCats: kein User', 'err'); return; }
+  fsLog('fsSaveCats: starte (' + Object.keys(CATS).length + ' Kategorien)', 'info');
+  try {
+    const col = db.collection("shared").doc("data").collection("cats");
+    const batch = db.batch();
+    Object.entries(CATS).forEach(function([key, cat]) {
+      batch.set(col.doc(key), { label: cat.label, icon: cat.icon, color: cat.color, kw: cat.kw || [] });
+    });
+    await batch.commit();
+    fsLog('fsSaveCats: OK', 'ok');
+  } catch(e) {
+    fsLog('fsSaveCats: FEHLER ' + (e.code || e.message), 'err');
+    throw e;
+  }
 }
 
 async function fsLoadAll() {
+  fsLog('fsLoadAll: starte', 'info');
   const txSnap = await db.collection("shared").doc("data").collection("txs").get();
   const loaded = txSnap.docs.map(d => d.data());
   if (loaded.length > 0) {
@@ -738,9 +796,10 @@ async function fsLoadAll() {
   }
 
   // ── Load all cats from Firestore; seed defaults on first run ──
+  fsLog('fsLoadAll: lade cats', 'info');
   const catsSnap = await db.collection("shared").doc("data").collection("cats").get();
   if (catsSnap.empty) {
-    // First-ever login: write defaults silently
+    fsLog('fsLoadAll: cats leer → schreibe Defaults', 'info');
     Object.assign(CATS, DEFAULT_CATS);
     await fsSaveCats();
   } else {
@@ -749,6 +808,7 @@ async function fsLoadAll() {
       const data = d.data();
       CATS[d.id] = { label: data.label, icon: data.icon, color: data.color, kw: data.kw || [] };
     });
+    fsLog('fsLoadAll: ' + catsSnap.docs.length + ' Kategorien geladen', 'ok');
   }
 
   const settSnap = await db.collection("shared").doc("data").collection("settings").doc("config").get();
@@ -780,13 +840,20 @@ async function fsLoadAll() {
 }
 
 async function fsSaveTxs() {
-  if (!currentUser) return;
-  const col = db.collection("shared").doc("data").collection("txs");
-  const batch = db.batch();
-  const existing = await col.get();
-  existing.docs.forEach(function(d) { batch.delete(d.ref); });
-  allTxs.forEach(function(t, i) { batch.set(col.doc(String(i)), t); });
-  await batch.commit();
+  if (!currentUser) { fsLog('fsSaveTxs: kein User', 'err'); return; }
+  fsLog('fsSaveTxs: starte (' + allTxs.length + ' Transaktionen)', 'info');
+  try {
+    const col = db.collection("shared").doc("data").collection("txs");
+    const batch = db.batch();
+    const existing = await col.get();
+    existing.docs.forEach(function(d) { batch.delete(d.ref); });
+    allTxs.forEach(function(t, i) { batch.set(col.doc(String(i)), t); });
+    await batch.commit();
+    fsLog('fsSaveTxs: OK', 'ok');
+  } catch(e) {
+    fsLog('fsSaveTxs: FEHLER ' + (e.code || e.message), 'err');
+    throw e;
+  }
 }
 
 async function fsSaveSettings() {
@@ -818,6 +885,7 @@ function hideLoading() {
 auth.onAuthStateChanged(async function(user) {
   if (user) {
     currentUser = user;
+    fsLog('Auth: eingeloggt als ' + user.email, 'ok');
     // Show logout row in burger menu
     var logoutRow = document.getElementById("burger-logout-row");
     if (logoutRow) logoutRow.style.display = "flex";
@@ -1157,7 +1225,15 @@ function showToast(msg) {
 }
 
 // ── State ──
-function saveTxs() { try { localStorage.setItem("finanzcheck_txs", JSON.stringify(allTxs)); } catch(e) {} fsSaveTxs().catch(function(e){console.warn("Firestore saveTxs:",e);}); }
+function saveTxs() {
+  try { localStorage.setItem("finanzcheck_txs", JSON.stringify(allTxs)); } catch(e) {}
+  fsSaveTxs().then(function() {
+    // success already logged inside fsSaveTxs
+  }).catch(function(e) {
+    fsLog('saveTxs catch: ' + (e.code || e.message), 'err');
+    showToast('❌ Nicht gespeichert: ' + (e.code || e.message || 'Unbekannter Fehler'));
+  });
+}
 function loadTxs() { try { return JSON.parse(localStorage.getItem("finanzcheck_txs") || "[]"); } catch { return []; } }
 
 let allTxs = loadTxs();
