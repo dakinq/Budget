@@ -30,7 +30,6 @@
     .tabs-wrapper {
       position: fixed; inset: 0;
       overflow: hidden;
-      overscroll-behavior: none;
     }
     .tabs-slider {
       display: flex;
@@ -44,9 +43,7 @@
       width: 100%;
       height: 100%;
       overflow-y: auto;
-      overflow-x: hidden;
       -webkit-overflow-scrolling: touch;
-      overscroll-behavior-y: contain;
       padding-bottom: 16px;
     }
     .screen::-webkit-scrollbar { display: none; }
@@ -92,53 +89,17 @@
     .btn.primary { background: var(--accent); color: #0f172a; font-weight: 600; border-color: var(--accent); }
     .btn.danger  { color: var(--red); border-color: var(--red); background: transparent; }
 
-    /* Burger button */
-    .burger-btn {
-      display: flex; align-items: center; justify-content: center;
-      width: 38px; height: 38px; background: none;
-      border: none;
-      border-radius: 10px;
-      cursor: pointer; flex-shrink: 0;
-      font-size: 22px; color: var(--text);
-      line-height: 1;
+    /* Month pills */
+    .month-scroll {
+      display: flex; gap: 8px; overflow-x: auto; padding: 8px 16px;
+      scrollbar-width: none; -webkit-overflow-scrolling: touch;
     }
-    .burger-btn span {
-      display: block; height: 2px; width: 100%; background: var(--text);
-      border-radius: 2px; transition: all .2s;
+    .month-scroll::-webkit-scrollbar { display: none; }
+    .month-pill {
+      background: var(--surface); border: 1px solid var(--border); border-radius: 20px;
+      color: var(--muted); padding: 6px 14px; font-size: 13px; white-space: nowrap; cursor: pointer;
     }
-    /* Burger menu sheet rows */
-    .burger-row {
-      display: flex; align-items: center; gap: 14px;
-      padding: 16px 20px; border-bottom: 1px solid var(--border);
-      cursor: pointer; font-size: 15px; font-weight: 500;
-    }
-    .burger-row:active { background: var(--surface2); }
-    .burger-row:last-child { border-bottom: none; }
-    .burger-row-icon { font-size: 20px; width: 28px; text-align: center; flex-shrink: 0; }
-    .burger-row.danger { color: var(--red); }
-
-    /* Month/Year picker bar */
-    .month-picker-bar {
-      display: flex; gap: 8px; padding: 8px 16px;
-    }
-    .period-pill {
-      flex: 1; display: flex; align-items: center; justify-content: space-between;
-      background: var(--surface); border: 1px solid var(--border); border-radius: 12px;
-      color: var(--text); padding: 9px 14px; font-size: 14px; font-weight: 600;
-      cursor: pointer; gap: 6px;
-    }
-    .period-pill:active { background: var(--surface2); }
-    .period-pill-label { flex: 1; text-align: left; }
-    .period-pill-chevron { color: var(--muted); font-size: 12px; }
-    /* Period picker sheet list */
-    .period-pick-row {
-      display: flex; align-items: center; justify-content: space-between;
-      padding: 15px 20px; border-bottom: 1px solid var(--border); cursor: pointer;
-      font-size: 16px; font-weight: 500;
-    }
-    .period-pick-row:active { background: var(--surface2); }
-    .period-pick-row.active { color: var(--accent); font-weight: 700; }
-    .period-pick-check { color: var(--accent); font-size: 18px; }
+    .month-pill.active { background: var(--accent); border-color: var(--accent); color: #0f172a; font-weight: 600; }
 
     /* Cards */
     .cards { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; padding: 0 16px 14px; }
@@ -167,48 +128,6 @@
 
     /* Bar chart */
     .bar-wrap { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 16px; }
-
-    /* Bar legend */
-    #bar-legend {
-      display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 6px;
-      padding: 10px 4px 0;
-    }
-    .legend-chip {
-      display: flex; align-items: center; gap: 8px;
-      padding: 7px 10px; border-radius: 10px;
-      cursor: pointer;
-      border: 1.5px solid transparent;
-      background: var(--surface2);
-      transition: all .15s;
-      user-select: none;
-      overflow: hidden;
-    }
-    .legend-chip:active { opacity: 0.75; }
-    .legend-chip.active {
-      border-color: currentColor;
-    }
-    .legend-chip-dot {
-      width: 10px; height: 10px; border-radius: 3px;
-      flex-shrink: 0;
-    }
-    .legend-chip-label {
-      font-size: 12px; font-weight: 500;
-      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-      color: var(--muted);
-    }
-    .legend-chip.active .legend-chip-label { color: currentColor; font-weight: 600; }
-    .legend-back-btn {
-      grid-column: 1 / -1;
-      display: flex; align-items: center; gap: 8px;
-      padding: 8px 12px; border-radius: 10px;
-      border: 1.5px solid var(--border);
-      background: var(--surface2); color: var(--muted);
-      font-size: 13px; font-weight: 600; cursor: pointer;
-      width: 100%;
-    }
-    .legend-back-btn:active { opacity: 0.75; }
 
     /* TX list */
     .tx-list { display: flex; flex-direction: column; gap: 2px; }
@@ -384,54 +303,6 @@
   </div>
 </div>
 
-<!-- BURGER MENU SHEET -->
-<div class="bottom-sheet" id="burger-sheet">
-  <div class="sheet-handle" style="cursor:pointer" onclick="closeAllSheets()"></div>
-  <div class="sheet-header">
-    <span class="sheet-title">Menü</span>
-  </div>
-  <div id="burger-sheet-content">
-    <div class="burger-row" onclick="closeBurgerThen(triggerUpload)">
-      <span class="burger-row-icon">📂</span>
-      <span>CSV importieren</span>
-    </div>
-    <div class="burger-row" onclick="closeBurgerThen(reCategorizeAll)">
-      <span class="burger-row-icon">🔄</span>
-      <span>Neu kategorisieren</span>
-    </div>
-    <div class="burger-row" onclick="closeBurgerThen(openSettings)">
-      <span class="burger-row-icon">⚙️</span>
-      <span>Einstellungen</span>
-    </div>
-    <div class="burger-row danger" onclick="closeBurgerThen(clearData)">
-      <span class="burger-row-icon">🗑</span>
-      <span>Alle Daten löschen</span>
-    </div>
-    <div class="burger-row danger" id="burger-logout-row" onclick="closeBurgerThen(doLogout)" style="display:none">
-      <span class="burger-row-icon">🚪</span>
-      <span>Abmelden</span>
-    </div>
-  </div>
-</div>
-
-<!-- YEAR PICKER SHEET -->
-<div class="bottom-sheet" id="year-picker-sheet">
-  <div class="sheet-handle" style="cursor:pointer" onclick="closeAllSheets()"></div>
-  <div class="sheet-header">
-    <span class="sheet-title">Jahr wählen</span>
-  </div>
-  <div id="year-picker-list"></div>
-</div>
-
-<!-- MONTH PICKER SHEET -->
-<div class="bottom-sheet" id="month-picker-sheet">
-  <div class="sheet-handle" style="cursor:pointer" onclick="closeAllSheets()"></div>
-  <div class="sheet-header">
-    <span class="sheet-title">Monat wählen</span>
-  </div>
-  <div id="month-picker-list"></div>
-</div>
-
 <!-- SETTINGS SHEET -->
 <div class="bottom-sheet" id="settings-sheet">
   <div class="sheet-handle" style="cursor:pointer" onclick="closeAllSheets()"></div>
@@ -491,24 +362,35 @@
   <div style="font-size:48px;margin-bottom:16px">&#x1F4B0;</div>
   <div style="font-size:24px;font-weight:700;margin-bottom:6px">Finanzcheck</div>
   <div style="font-size:14px;color:var(--muted);margin-bottom:32px;text-align:center">Melde dich an um deine Finanzen zu sehen</div>
-  <div style="width:100%;max-width:340px;display:flex;flex-direction:column;gap:12px">
+  <form onsubmit="doLogin();return false;" style="width:100%;max-width:340px;display:flex;flex-direction:column;gap:12px">
     <input id="auth-email" type="email" placeholder="E-Mail" autocomplete="email"
       style="width:100%;background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:14px 16px;color:var(--text);font-size:16px;outline:none"
       onfocus="this.style.borderColor='var(--accent)'" onblur="this.style.borderColor='var(--border)'"
     />
-    <input id="auth-password" type="password" placeholder="Passwort" autocomplete="current-password" onkeydown="if(event.key==='Enter')doLogin()"
+    <input id="auth-password" type="password" placeholder="Passwort" autocomplete="current-password"
       style="width:100%;background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:14px 16px;color:var(--text);font-size:16px;outline:none"
       onfocus="this.style.borderColor='var(--accent)'" onblur="this.style.borderColor='var(--border)'"
     />
     <div id="auth-error" style="font-size:13px;color:var(--red);text-align:center;min-height:18px"></div>
-    <button type="button" id="login-btn" onclick="doLogin()"
+    <button type="submit" id="login-btn"
       style="width:100%;background:var(--accent);color:#0f172a;border:none;border-radius:12px;padding:14px;font-size:16px;font-weight:700;cursor:pointer">Anmelden</button>
     <button type="button" onclick="doRegister()"
       style="width:100%;background:transparent;border:1px solid var(--border);border-radius:12px;padding:12px;font-size:14px;color:var(--muted);cursor:pointer">Konto erstellen</button>
-  </div>
+  </form>
 </div>
 
 <div class="tabs-wrapper" style="display:none">
+  <!-- Bottom Nav Bar (visible on Desktop & as fallback) -->
+  <nav class="bottom-nav" id="bottom-nav">
+    <button class="bottom-nav-btn active" id="nav-dashboard" onclick="switchTab(0)">
+      <span class="bottom-nav-icon">💰</span>
+      <span class="bottom-nav-label">Dashboard</span>
+    </button>
+    <button class="bottom-nav-btn" id="nav-prognose" onclick="switchTab(1)">
+      <span class="bottom-nav-icon">📈</span>
+      <span class="bottom-nav-label">Prognose</span>
+    </button>
+  </nav>
   <div class="tabs-slider" id="tabs-slider">
 
     <!-- DASHBOARD SCREEN -->
@@ -518,7 +400,14 @@
           <span style="font-size:22px">💰</span>
           <span class="app-title">Finanzcheck</span>
         </div>
-        <button class="burger-btn" onclick="openBurger()" aria-label="Menü"><span style="font-size:22px;color:var(--text);line-height:1">☰</span></button>
+        <div class="topbar-actions">
+          <button class="btn primary" onclick="triggerUpload()">📂 CSV</button>
+          <button class="btn" onclick="openSettings()" style="font-size:16px;padding:7px 10px">⚙️</button>
+          <button class="btn danger" onclick="clearData()">🗑</button>
+        </div>
+      </div>
+
+      <!-- Account Switcher -->
       <div class="account-switcher" id="account-switcher-dash">
         <button class="account-btn active" id="acc-btn-all" onclick="setAccount('all')">
           Alle Konten
@@ -534,16 +423,7 @@
         </button>
       </div>
 
-      <div class="month-picker-bar">
-        <button class="period-pill" id="year-pill" onclick="openYearPicker()">
-          <span class="period-pill-label" id="year-pill-label">—</span>
-          <span class="period-pill-chevron">▾</span>
-        </button>
-        <button class="period-pill" id="month-pill" onclick="openMonthPicker()">
-          <span class="period-pill-label" id="month-pill-label">—</span>
-          <span class="period-pill-chevron">▾</span>
-        </button>
-      </div>
+      <div class="month-scroll" id="months"></div>
 
       <div class="cards">
         <div class="card" id="card-exp" onclick="toggleView('exp')" style="cursor:pointer"><div class="card-label">Ausgaben</div><div class="card-val red" id="c-exp">—</div></div>
@@ -575,7 +455,11 @@
           <span style="font-size:22px">📈</span>
           <span class="app-title">Prognose</span>
         </div>
-        <button class="burger-btn" onclick="openBurger()" aria-label="Menü"><span style="font-size:22px;color:var(--text);line-height:1">☰</span></button>
+        <div class="topbar-actions">
+          <button class="btn primary" onclick="triggerUpload()">📂 CSV</button>
+          <button class="btn" onclick="openSettings()" style="font-size:16px;padding:7px 10px">⚙️</button>
+          <button class="btn danger" onclick="clearData()">🗑</button>
+        </div>
       </div>
 
       <!-- Account Switcher (Prognose) -->
@@ -589,7 +473,7 @@
         <div class="sec">
           <div class="sec-title" id="bar-chart-title">Monatsverlauf — Ausgaben</div>
           <div class="bar-wrap"><canvas id="bar-long" width="280" height="160" style="width:100%;height:auto"></canvas></div>
-          <div id="bar-legend"></div>
+          <div id="bar-legend" style="display:flex;flex-wrap:wrap;gap:6px 12px;padding:8px 4px 0"></div>
         </div>
         <div class="cards" id="prog-stats"></div>
         <div class="sec">
@@ -752,22 +636,19 @@ async function fsSaveSettings() {
 auth.onAuthStateChanged(async function(user) {
   if (user) {
     currentUser = user;
-    // Show logout row in burger menu
-    var logoutRow = document.getElementById("burger-logout-row");
-    if (logoutRow) logoutRow.style.display = "flex";
+    document.querySelectorAll(".topbar-actions").forEach(function(tb) {
+      if (!tb.querySelector(".logout-btn")) {
+        var btn = document.createElement("button");
+        btn.className = "btn logout-btn";
+        btn.textContent = "Abmelden";
+        btn.style.cssText = "font-size:12px;padding:7px 10px;background:transparent;border:1px solid var(--border);color:var(--muted)";
+        btn.onclick = doLogout;
+        tb.appendChild(btn);
+      }
+    });
     hideLogin();
     try { await fsLoadAll(); } catch(e) { console.warn("Firestore load error:", e); showToast("⚠️ Cloud-Daten konnten nicht geladen werden"); }
-    try {
-      render();
-    } catch(renderErr) {
-      document.body.insertAdjacentHTML("beforeend",
-        "<div style=\"position:fixed;inset:0;z-index:9999;background:#0f172a;color:#f87171;padding:24px;font-size:13px;font-family:monospace;overflow:auto\">" +
-        "<b style=\"font-size:16px\">Render Fehler</b><br><br>" +
-        "<b>Message:</b> " + renderErr.message + "<br><br>" +
-        "<b>Stack:</b><br>" + (renderErr.stack||"").replace(/\n/g,"<br>") +
-        "</div>"
-      );
-    }
+    render();
   } else {
     currentUser = null;
     allTxs = [];
@@ -848,26 +729,15 @@ function rebuildCats() {
 }
 rebuildCats();
 
-// Word-boundary keyword match: "obi" matches "OBI ZÜRICH" but not "MOBILEZONE"
-function kwMatch(text, kw) {
-  const l = text.toLowerCase();
-  const k = kw.toLowerCase();
-  const idx = l.indexOf(k);
-  if (idx === -1) return false;
-  const before = idx === 0 ? true : /[\s\-\/\.,_\(\)]/.test(l[idx - 1]);
-  const after  = idx + k.length >= l.length ? true : /[\s\-\/\.,_\(\)]/.test(l[idx + k.length]);
-  return before && after;
-}
-
 function categorize(desc) {
   const l = (desc||"").toLowerCase();
   for (const [k] of Object.entries(CATS)) {
     if (k==="sonstiges" || k==="unkategorisiert") continue;
-    if ((userKws[k]||[]).some(w => kwMatch(l, w))) return k;
+    if ((userKws[k]||[]).some(w => l.includes(w))) return k;
   }
   for (const [k,c] of Object.entries(CATS)) {
     if (k==="sonstiges" || k==="unkategorisiert") continue;
-    if ((c.kw||[]).some(w => kwMatch(l, w))) return k;
+    if ((c.kw||[]).some(w => l.includes(w))) return k;
   }
   return "unkategorisiert";
 }
@@ -1236,8 +1106,9 @@ function confirmNo() {
 
 // ── Category Picker ──
 function findMatchingKeyword(desc, catKey) {
+  const l = (desc || "").toLowerCase();
   const kws = allKwsForCat(catKey);
-  return kws.find(w => kwMatch(desc || "", w)) || null;
+  return kws.find(w => l.includes(w)) || null;
 }
 
 function toggleIgnore() {
@@ -1603,7 +1474,8 @@ function openCatDetail(catKey) {
 function applyKeywordToCat(catKey, kw) {
   let count = 0;
   allTxs.forEach(t => {
-    if (kwMatch(t.description || "", kw) && t.category !== catKey && !t.manual) {
+    const l = (t.description || "").toLowerCase();
+    if (l.includes(kw) && t.category !== catKey && !t.manual) {
       t.category = catKey;
       count++;
     }
@@ -1611,29 +1483,6 @@ function applyKeywordToCat(catKey, kw) {
   saveTxs();
   render();
   return count;
-}
-
-function reCategorizeAll() {
-  const toRecat = allTxs.filter(t => !t.manual);
-  if (toRecat.length === 0) {
-    showToast("ℹ️ Keine Buchungen zum Kategorisieren");
-    return;
-  }
-  let count = 0;
-  toRecat.forEach(t => {
-    const newCat = categorize(t.description);
-    if (newCat !== t.category) {
-      t.category = newCat;
-      count++;
-    }
-  });
-  if (count > 0) {
-    saveTxs();
-    render();
-    showToast(`✅ ${count} Buchung${count !== 1 ? "en" : ""} neu kategorisiert`);
-  } else {
-    showToast("✅ Alle Buchungen bereits aktuell");
-  }
 }
 
 function addKwFromDetail(catKey) {
@@ -1673,15 +1522,8 @@ function addKwFromInput(catKey) {
   const input = document.getElementById("kw-input-"+catKey);
   const kw = (input.value||"").trim().toLowerCase();
   if (!kw) return;
-  if (addUserKw(catKey, kw)) {
-    const count = applyKeywordToCat(catKey, kw);
-    input.value = ""; renderSettings();
-    if (count > 0) {
-      showToast(`✅ „${kw}" · ${count} Buchung${count !== 1 ? "en" : ""} neu kategorisiert`);
-    } else {
-      showToast(`✅ „${kw}" zu ${CATS[catKey].label} hinzugefügt`);
-    }
-  } else { showToast("⚠️ Keyword bereits vorhanden"); }
+  if (addUserKw(catKey, kw)) { input.value = ""; renderSettings(); showToast(`✅ „${kw}" zu ${CATS[catKey].label} hinzugefügt`); }
+  else { showToast("⚠️ Keyword bereits vorhanden"); }
 }
 
 function delKw(catKey, kw) { removeUserKw(catKey, kw); renderSettings(); showToast(`🗑 „${kw}" entfernt`); }
@@ -1792,17 +1634,6 @@ function _deleteUserCatConfirmed(key) {
   showToast("🗑 Kategorie gelöscht");
 }
 
-// ── Burger menu ──
-function openBurger() {
-  openSheet("burger-sheet");
-}
-
-function closeBurgerThen(fn) {
-  closeAllSheets();
-  // Small delay so sheet closes before action fires (e.g. file picker, confirm dialogs)
-  setTimeout(fn, 280);
-}
-
 // ── Update account switcher info ──
 function updateAccountSwitcherInfo() {
   const zkbTxs = allTxs.filter(t => t.bank === "zkb");
@@ -1826,12 +1657,9 @@ function render() {
   if (!activeMonth && months.length) activeMonth = months[0];
   if (months.length && !months.includes(activeMonth)) activeMonth = months[0];
 
-  // Update year/month pills
-  const activeYear = activeMonth ? activeMonth.split("-")[0] : null;
-  const activeMonthNum = activeMonth ? activeMonth.split("-")[1] : null;
-  document.getElementById("year-pill-label").textContent = activeYear || "—";
-  document.getElementById("month-pill-label").textContent =
-    activeMonthNum ? MN[parseInt(activeMonthNum, 10) - 1] : "—";
+  document.getElementById("months").innerHTML = months.map(m=>
+    `<button class="month-pill${m===activeMonth?" active":""}" onclick="selMonth('${m}')">${ml(m)}</button>`
+  ).join("");
 
   const mExp = exp.filter(t=>mk(t.date)===activeMonth);
   const mInc = inc.filter(t=>mk(t.date)===activeMonth);
@@ -1927,50 +1755,6 @@ function render() {
 }
 
 function selMonth(m){ activeMonth=m; activeCat=null; activeView=null; render(); }
-
-function openYearPicker() {
-  const txs = filteredTxs();
-  const months = [...new Set(txs.map(t => mk(t.date)))].sort().reverse();
-  const years = [...new Set(months.map(m => m.split("-")[0]))];
-  const activeYear = activeMonth ? activeMonth.split("-")[0] : null;
-  document.getElementById("year-picker-list").innerHTML = years.map(y => {
-    const isActive = y === activeYear;
-    return `<div class="period-pick-row${isActive ? " active" : ""}" onclick="selectYear('${y}')">
-      <span>${y}</span>
-      ${isActive ? '<span class="period-pick-check">✓</span>' : ''}
-    </div>`;
-  }).join("");
-  openSheet("year-picker-sheet");
-}
-
-function selectYear(y) {
-  const txs = filteredTxs();
-  const months = [...new Set(txs.map(t => mk(t.date)))].sort().reverse();
-  const monthsInYear = months.filter(m => m.startsWith(y));
-  // Pick currently active month if it exists in new year, otherwise latest
-  const preferred = activeMonth && activeMonth.startsWith(y) ? activeMonth : monthsInYear[0];
-  activeMonth = preferred || monthsInYear[0];
-  activeCat = null; activeView = null;
-  closeAllSheets();
-  render();
-}
-
-function openMonthPicker() {
-  const txs = filteredTxs();
-  const months = [...new Set(txs.map(t => mk(t.date)))].sort().reverse();
-  const activeYear = activeMonth ? activeMonth.split("-")[0] : null;
-  // Show only months for the active year
-  const monthsInYear = activeYear ? months.filter(m => m.startsWith(activeYear)) : months;
-  document.getElementById("month-picker-list").innerHTML = monthsInYear.map(m => {
-    const isActive = m === activeMonth;
-    const [y, mo] = m.split("-");
-    return `<div class="period-pick-row${isActive ? " active" : ""}" onclick="selMonth('${m}');closeAllSheets()">
-      <span>${MN[parseInt(mo, 10) - 1]} ${y}</span>
-      ${isActive ? '<span class="period-pick-check">✓</span>' : ''}
-    </div>`;
-  }).join("");
-  openSheet("month-picker-sheet");
-}
 function selCat(k){ activeCat=activeCat===k?null:k; activeView=null; render(); }
 function toggleView(v){ activeView = activeView===v ? null : v; activeCat=null; render(); }
 
@@ -2127,25 +1911,14 @@ function switchTab(idx) {
 // Horizontal swipe to switch tabs
 (function setupTabSwipe() {
   let startX = 0, startY = 0, startT = 0, dragging = false, dx = 0;
-  let lockedOut = false; // true when touch started in a horizontal-scroll element
   const wrapper = document.querySelector(".tabs-wrapper");
 
-  // Elements that scroll horizontally themselves — tab swipe must not fire from these
-  function isHorizScrollTarget(el) {
-    // Any element with overflow-x: auto/scroll
-    let node = el;
-    while (node && node !== wrapper) {
-      const style = window.getComputedStyle(node);
-      if (style.overflowX === "auto" || style.overflowX === "scroll") return true;
-      node = node.parentElement;
-    }
-    return false;
-  }
-
   wrapper.addEventListener("touchstart", e => {
+    // If a sheet is open, don't intercept
     if (document.querySelector(".bottom-sheet.open")) return;
-    lockedOut = isHorizScrollTarget(e.target);
-    if (lockedOut) return;
+    // Don't intercept touches that start inside a horizontally scrollable element (e.g. month bar)
+    const monthBar = document.getElementById("months");
+    if (monthBar && monthBar.contains(e.target)) return;
     startX = e.touches[0].clientX;
     startY = e.touches[0].clientY;
     startT = Date.now();
@@ -2153,39 +1926,32 @@ function switchTab(idx) {
   }, { passive: true });
 
   wrapper.addEventListener("touchmove", e => {
-    if (lockedOut) return;
     if (document.querySelector(".bottom-sheet.open")) return;
     dx = e.touches[0].clientX - startX;
     const dy = e.touches[0].clientY - startY;
-    // Lock out if vertical scroll is clearly dominant — user is scrolling the page
-    if (!dragging && Math.abs(dy) > Math.abs(dx) && Math.abs(dy) > 8) {
-      lockedOut = true;
-      return;
-    }
-    // Only hijack if horizontal swipe is clearly dominant
-    if (!dragging && Math.abs(dx) > Math.abs(dy) * 1.5 && Math.abs(dx) > 12) {
+    // Only hijack if horizontal swipe is dominant
+    if (!dragging && Math.abs(dx) > Math.abs(dy) && Math.abs(dx) > 10) {
       dragging = true;
     }
     if (dragging) {
       const base = activeTab * 100;
+      const pct = (dx / window.innerWidth) * 100;
       slider.style.transition = "none";
       slider.style.transform = `translateX(calc(-${base}% + ${dx}px))`;
     }
   }, { passive: true });
 
   wrapper.addEventListener("touchend", e => {
-    const wasLocked = lockedOut;
-    lockedOut = false;
-    if (!dragging || wasLocked) return;
+    if (!dragging) return;
     slider.style.transition = "";
     const dt = Date.now() - startT;
     const threshold = Math.abs(dx) > window.innerWidth * 0.3 || (Math.abs(dx) > 60 && dt < 300);
     if (threshold) {
       if (dx < 0 && activeTab === 0) switchTab(1);
       else if (dx > 0 && activeTab === 1) switchTab(0);
-      else switchTab(activeTab);
+      else switchTab(activeTab); // snap back
     } else {
-      switchTab(activeTab);
+      switchTab(activeTab); // snap back
     }
     dragging = false;
   }, { passive: true });
@@ -2272,9 +2038,6 @@ function addSwipeToClose(sheetId, closeFn) {
 }
 
 addSwipeToClose("cat-picker", closeAllSheets);
-addSwipeToClose("burger-sheet", closeAllSheets);
-addSwipeToClose("year-picker-sheet", closeAllSheets);
-addSwipeToClose("month-picker-sheet", closeAllSheets);
 addSwipeToClose("settings-sheet", closeAllSheets);
 addSwipeToClose("new-cat-sheet", closeNewCat);
 addSwipeToClose("cat-detail-sheet", closeAllSheets);
@@ -2316,7 +2079,7 @@ function renderPrognose() {
     drawStackedBar(barCanvas, months.map(m => ml(m).split(" ")[0]), [{ color: cat.color, values: catVals }], catVals);
     document.getElementById("bar-chart-title").textContent = `${cat.icon} ${cat.label} — Monatsverlauf`;
     document.getElementById("bar-legend").innerHTML =
-      `<button class="legend-back-btn" onclick="selectPrognoseCat(null)">← Alle Kategorien</button>`;
+      `<button onclick="selectPrognoseCat(null)" style="background:none;border:1px solid var(--border);border-radius:8px;color:var(--muted);font-size:12px;padding:3px 10px;cursor:pointer">← Alle Kategorien</button>`;
   } else {
     const catBarData = allCatKeys.map(k => {
       const color = (allCatsMap[k] || {}).color || "#94a3b8";
@@ -2331,12 +2094,9 @@ function renderPrognose() {
       const cat = allCatsMap[c.key];
       if (!cat) return "";
       const isActive = activePrognoseCat === c.key;
-      return `<div
-        onclick="selectPrognoseCat('${c.key}')"
-        class="legend-chip${isActive ? ' active' : ''}"
-        style="color:${cat.color}${isActive ? ';background:' + cat.color + '18' : ''}">
-        <span class="legend-chip-dot" style="background:${cat.color}"></span>
-        <span class="legend-chip-label">${cat.icon} ${cat.label}</span>
+      return `<div onclick="selectPrognoseCat('${c.key}')" style="display:flex;align-items:center;gap:5px;font-size:12px;cursor:pointer;padding:4px 8px;border-radius:8px;border:1px solid ${isActive ? cat.color : 'transparent'};background:${isActive ? cat.color + '22' : 'transparent'};color:${isActive ? cat.color : 'var(--muted)'};transition:all .15s;user-select:none">
+        <span style="width:10px;height:10px;border-radius:3px;background:${cat.color};flex-shrink:0;display:inline-block"></span>
+        ${cat.icon} ${cat.label}
       </div>`;
     }).join("");
   }
@@ -2403,6 +2163,7 @@ function renderPrognose() {
   `;
 }
 
+render();
 </script>
 </body>
 </html>
