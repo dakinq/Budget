@@ -31,6 +31,7 @@
       position: fixed; inset: 0;
       overflow: hidden;
       overscroll-behavior: none;
+      touch-action: pan-y;
     }
     .tabs-slider {
       display: flex;
@@ -38,6 +39,10 @@
       top: 0; left: 0; right: 0; bottom: 0;
       transition: transform .35s cubic-bezier(.4,0,.2,1);
       will-change: transform;
+      -webkit-transform: translateZ(0);
+      transform: translateZ(0);
+      backface-visibility: hidden;
+      -webkit-backface-visibility: hidden;
     }
     .screen {
       flex: 0 0 100%;
@@ -2149,6 +2154,8 @@ function switchTab(idx) {
     startY = e.touches[0].clientY;
     startT = Date.now();
     dragging = false; dx = 0;
+    // Pre-disable transition so first move frame is instant
+    slider.style.transition = "none";
   }, { passive: true });
 
   wrapper.addEventListener("touchmove", e => {
