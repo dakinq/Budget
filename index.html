@@ -757,7 +757,17 @@ auth.onAuthStateChanged(async function(user) {
     if (logoutRow) logoutRow.style.display = "flex";
     hideLogin();
     try { await fsLoadAll(); } catch(e) { console.warn("Firestore load error:", e); showToast("⚠️ Cloud-Daten konnten nicht geladen werden"); }
-    render();
+    try {
+      render();
+    } catch(renderErr) {
+      document.body.insertAdjacentHTML("beforeend",
+        "<div style=\"position:fixed;inset:0;z-index:9999;background:#0f172a;color:#f87171;padding:24px;font-size:13px;font-family:monospace;overflow:auto\">" +
+        "<b style=\"font-size:16px\">Render Fehler</b><br><br>" +
+        "<b>Message:</b> " + renderErr.message + "<br><br>" +
+        "<b>Stack:</b><br>" + (renderErr.stack||"").replace(/\n/g,"<br>") +
+        "</div>"
+      );
+    }
   } else {
     currentUser = null;
     allTxs = [];
