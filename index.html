@@ -2166,11 +2166,12 @@ function switchTab(idx) {
       dragging = true;
     }
     if (dragging) {
+      e.preventDefault(); // block vertical scroll while swiping horizontally
       const base = activeTab * 100;
       slider.style.transition = "none";
       slider.style.transform = `translateX(calc(-${base}% + ${dx}px))`;
     }
-  }, { passive: true });
+  }, { passive: false });
 
   wrapper.addEventListener("touchend", e => {
     const wasLocked = lockedOut;
