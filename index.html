@@ -367,18 +367,6 @@
   </div>
 </div>
 
-<!-- CATS CHECK MODAL -->
-<div id="cats-check-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:1200;align-items:flex-end;justify-content:center;">
-  <div style="background:var(--surface);border-radius:20px 20px 0 0;width:100%;max-width:480px;padding:20px 20px 32px;max-height:80vh;overflow-y:auto;">
-    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">
-      <div style="font-size:16px;font-weight:700">🔍 Kategorien in Firestore</div>
-      <button onclick="closeCatsCheckModal()" style="background:none;border:none;color:var(--muted);font-size:24px;cursor:pointer;padding:0 4px;line-height:1">×</button>
-    </div>
-    <div id="cats-check-body"></div>
-    <button onclick="closeCatsCheckModal()" style="width:100%;margin-top:16px;background:var(--accent);color:#0f172a;border:none;border-radius:12px;padding:12px;font-size:15px;font-weight:700;cursor:pointer">Schließen</button>
-  </div>
-</div>
-
 <div id="kw-popup-overlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.55);z-index:1100;align-items:center;justify-content:center;" onclick="if(event.target===this)closeKwPopup(false)">
   <div style="background:var(--surface);border-radius:20px;padding:24px 20px;width:calc(100% - 48px);max-width:380px;box-shadow:0 8px 32px #0008;">
     <div style="font-size:15px;font-weight:700;margin-bottom:6px;color:var(--text)" id="kw-popup-title">Keyword speichern?</div>
@@ -413,14 +401,6 @@
     <div class="burger-row" onclick="closeBurgerThen(openSettings)">
       <span class="burger-row-icon">⚙️</span>
       <span>Einstellungen</span>
-    </div>
-    <div class="burger-row" onclick="closeBurgerThen(migrateBuiltinCatsToFirestore)">
-      <span class="burger-row-icon">☁️</span>
-      <span>Kategorien → Firestore migrieren</span>
-    </div>
-    <div class="burger-row" onclick="closeBurgerThen(checkFirestoreCats)">
-      <span class="burger-row-icon">🔍</span>
-      <span>Kategorien in Firestore prüfen</span>
     </div>
     <div class="burger-row danger" onclick="closeBurgerThen(clearData)">
       <span class="burger-row-icon">🗑</span>
@@ -719,11 +699,33 @@ async function _doLogoutConfirmed() {
 }
 
 // ── Firestore helpers ──────────────────────────────────────────────
+const DEFAULT_CATS = {
+  lebensmittel:    { label:"Lebensmittel",         icon:"🛒", color:"#4ade80", kw:[] },
+  restaurant:      { label:"Restaurant",            icon:"🍽", color:"#fb923c", kw:[] },
+  transport:       { label:"Transport",             icon:"🚗", color:"#60a5fa", kw:[] },
+  shopping:        { label:"Shopping",              icon:"🛍", color:"#c084fc", kw:[] },
+  drogerie:        { label:"Drogerie",              icon:"🧴", color:"#2dd4bf", kw:[] },
+  medizin:         { label:"Ärzte / Medizin",       icon:"🏥", color:"#f87171", kw:[] },
+  wohnen:          { label:"Wohnen",                icon:"🏠", color:"#fbbf24", kw:[] },
+  freizeit:        { label:"Freizeit",              icon:"🎉", color:"#a3e635", kw:[] },
+  sonstiges:       { label:"Sonstiges",             icon:"📦", color:"#94a3b8", kw:[] },
+  unkategorisiert: { label:"Nicht kategorisiert",   icon:"❓", color:"#475569", kw:[] }
+};
+
+async function fsSaveCats() {
+  if (!currentUser) return;
+  const col = db.collection("shared").doc("data").collection("cats");
+  const batch = db.batch();
+  Object.entries(CATS).forEach(function([key, cat]) {
+    batch.set(col.doc(key), { label: cat.label, icon: cat.icon, color: cat.color, kw: cat.kw || [] });
+  });
+  await batch.commit();
+}
+
 async function fsLoadAll() {
   const txSnap = await db.collection("shared").doc("data").collection("txs").get();
   const loaded = txSnap.docs.map(d => d.data());
   if (loaded.length > 0) {
-    // Merge ignored flags from localStorage in case Firestore save was incomplete
     const localTxs = loadTxs();
     loaded.forEach(function(t) {
       const match = localTxs.find(function(l) {
@@ -732,41 +734,28 @@ async function fsLoadAll() {
       if (match && match.ignored) t.ignored = true;
     });
     allTxs = loaded;
-    // Persist merged state back to localStorage
     try { localStorage.setItem("finanzcheck_txs", JSON.stringify(allTxs)); } catch(e) {}
   }
 
-  // ── Load builtin categories from Firestore (if migrated) ──
-  try {
-    const catsSnap = await db.collection("shared").doc("data").collection("builtinCats").get();
-    if (!catsSnap.empty) {
-      // Clear current builtin keys (non-user) and replace with Firestore values
-      Object.keys(CATS).forEach(k => { if (!CATS[k]._user) delete CATS[k]; });
-      catsSnap.docs.forEach(function(d) {
-        const data = d.data();
-        CATS[d.id] = { label: data.label, icon: data.icon, color: data.color, kw: data.kw || [] };
-      });
-    }
-  } catch(e) { console.warn("builtinCats load error:", e); }
+  // ── Load all cats from Firestore; seed defaults on first run ──
+  const catsSnap = await db.collection("shared").doc("data").collection("cats").get();
+  if (catsSnap.empty) {
+    // First-ever login: write defaults silently
+    Object.assign(CATS, DEFAULT_CATS);
+    await fsSaveCats();
+  } else {
+    Object.keys(CATS).forEach(function(k) { delete CATS[k]; });
+    catsSnap.docs.forEach(function(d) {
+      const data = d.data();
+      CATS[d.id] = { label: data.label, icon: data.icon, color: data.color, kw: data.kw || [] };
+    });
+  }
 
   const settSnap = await db.collection("shared").doc("data").collection("settings").doc("config").get();
   if (settSnap.exists) {
     const s = settSnap.data();
-    if (s.userKws) {
-      // Merge: keep any keywords the user may have added before fsLoadAll finished
-      const merged = Object.assign({}, s.userKws);
-      Object.entries(userKws).forEach(function([cat, kws]) {
-        if (!merged[cat]) merged[cat] = [];
-        kws.forEach(function(kw) { if (!merged[cat].includes(kw)) merged[cat].push(kw); });
-      });
-      userKws = merged;
-      localStorage.setItem("finanzcheck_kws", JSON.stringify(userKws));
-    }
-    if (s.removedKws) { removedKws = s.removedKws; localStorage.setItem("finanzcheck_removed_kws", JSON.stringify(removedKws)); }
-    if (s.userCats)   { userCats   = s.userCats;   localStorage.setItem("finanzcheck_cats", JSON.stringify(userCats)); }
-    if (s.eurToChf)   { eurToChf   = s.eurToChf;   localStorage.setItem("finanzcheck_eurChf", String(eurToChf)); }
+    if (s.eurToChf) { eurToChf = s.eurToChf; localStorage.setItem("finanzcheck_eurChf", String(eurToChf)); }
   }
-  Object.entries(userCats).forEach(function(entry) { CATS[entry[0]] = Object.assign({}, entry[1], { _user: true }); });
 }
 
 async function fsSaveTxs() {
@@ -780,7 +769,6 @@ async function fsSaveTxs() {
 }
 
 async function fsSaveSettings() {
-  // If currentUser not yet set, wait up to 3s for auth to complete
   if (!currentUser) {
     await new Promise(function(resolve) {
       var waited = 0;
@@ -792,7 +780,7 @@ async function fsSaveSettings() {
   }
   if (!currentUser) return;
   await db.collection("shared").doc("data").collection("settings").doc("config").set(
-    { userKws: userKws, removedKws: removedKws, userCats: userCats, eurToChf: eurToChf }
+    { eurToChf: eurToChf }
   );
 }
 
@@ -803,79 +791,6 @@ function showLoading(msg) {
 }
 function hideLoading() {
   document.getElementById("loading").style.display = "none";
-}
-
-// ── Kategorien-Migration: Builtin CATS → Firestore ─────────────────
-const BUILTIN_CATS_SNAPSHOT = {
-  lebensmittel: { label:"Lebensmittel", icon:"🛒", color:"#4ade80", kw:[] },
-  restaurant:   { label:"Restaurant",   icon:"🍽", color:"#fb923c", kw:[] },
-  transport:    { label:"Transport",    icon:"🚗", color:"#60a5fa", kw:[] },
-  shopping:     { label:"Shopping",     icon:"🛍", color:"#c084fc", kw:[] },
-  drogerie:     { label:"Drogerie",      icon:"🧴", color:"#2dd4bf", kw:[] },
-  medizin:      { label:"Ärzte / Medizin", icon:"🏥", color:"#f87171", kw:[] },
-  wohnen:       { label:"Wohnen",       icon:"🏠", color:"#fbbf24", kw:[] },
-  freizeit:     { label:"Freizeit",     icon:"🎉", color:"#a3e635", kw:[] },
-  sonstiges:       { label:"Sonstiges",         icon:"📦", color:"#94a3b8", kw:[] },
-  unkategorisiert: { label:"Nicht kategorisiert", icon:"❓", color:"#475569", kw:[] }
-};
-
-async function migrateBuiltinCatsToFirestore() {
-  if (!currentUser) { showToast("⚠️ Bitte zuerst anmelden"); return; }
-  showLoading("Kategorien werden gespeichert…");
-  try {
-    const catsCol = db.collection("shared").doc("data").collection("builtinCats");
-    // Write all directly — no pre-read, merge so existing keywords aren't wiped
-    const batch = db.batch();
-    Object.entries(BUILTIN_CATS_SNAPSHOT).forEach(function([key, cat]) {
-      batch.set(catsCol.doc(key), { label: cat.label, icon: cat.icon, color: cat.color, kw: cat.kw, _builtin: true }, { merge: true });
-    });
-    await batch.commit();
-    hideLoading();
-    showToast("✅ " + Object.keys(BUILTIN_CATS_SNAPSHOT).length + " Kategorien gespeichert");
-  } catch(e) {
-    hideLoading();
-    console.error("Migration error:", e);
-    showToast("❌ Fehler: " + (e.message || e.code || String(e)));
-  }
-}
-
-async function checkFirestoreCats() {
-  if (!currentUser) { showToast("⚠️ Bitte zuerst anmelden"); return; }
-  showLoading("Kategorien werden geprüft…");
-  try {
-    const catsCol = db.collection("shared").doc("data").collection("builtinCats");
-    const snap = await catsCol.get();
-    hideLoading();
-
-    const found = {};
-    snap.docs.forEach(function(d) { found[d.id] = d.data(); });
-    const builtinKeys = Object.keys(BUILTIN_CATS_SNAPSHOT);
-    const missingKeys = builtinKeys.filter(function(k) { return !found[k]; });
-
-    let rows = builtinKeys.map(function(k) {
-      const inFS = !!found[k];
-      const cat = BUILTIN_CATS_SNAPSHOT[k];
-      return '<div style="display:flex;align-items:center;gap:10px;padding:8px 12px;border-radius:10px;background:var(--surface2);margin-bottom:4px">'
-        + '<span style="font-size:18px">' + cat.icon + '</span>'
-        + '<span style="flex:1;font-size:13px;font-weight:500">' + cat.label + '</span>'
-        + '<span style="font-size:13px;font-weight:700;color:' + (inFS ? 'var(--green)' : 'var(--red)') + '">' + (inFS ? '✅' : '❌ fehlt') + '</span>'
-        + '</div>';
-    }).join('');
-
-    let summary = missingKeys.length === 0
-      ? '<div style="color:var(--green);font-size:13px;margin-top:8px;font-weight:600">✅ Alle ' + builtinKeys.length + ' Kategorien vorhanden!</div>'
-      : '<div style="color:var(--red);font-size:13px;margin-top:8px;font-weight:600">⚠️ ' + missingKeys.length + ' fehlen — bitte Migration ausführen</div>';
-
-    document.getElementById("cats-check-body").innerHTML = rows + summary;
-    document.getElementById("cats-check-modal").style.display = "flex";
-  } catch(e) {
-    hideLoading();
-    console.error("Check error:", e);
-    showToast("❌ Fehler: " + (e.message || e.code || String(e)));
-  }
-}
-function closeCatsCheckModal() {
-  document.getElementById("cats-check-modal").style.display = "none";
 }
 
 // ── Auth state observer ────────────────────────────────────────────
@@ -896,77 +811,27 @@ auth.onAuthStateChanged(async function(user) {
 });
 
 // ── Kategorien ──
-const CATS = {
-  lebensmittel: { label:"Lebensmittel", icon:"🛒", color:"#4ade80", kw:[] },
-  restaurant:   { label:"Restaurant",   icon:"🍽", color:"#fb923c", kw:[] },
-  transport:    { label:"Transport",    icon:"🚗", color:"#60a5fa", kw:[] },
-  shopping:     { label:"Shopping",     icon:"🛍", color:"#c084fc", kw:[] },
-  drogerie:     { label:"Drogerie",      icon:"🧴", color:"#2dd4bf", kw:[] },
-  medizin:      { label:"Ärzte / Medizin", icon:"🏥", color:"#f87171", kw:[] },
-  wohnen:       { label:"Wohnen",       icon:"🏠", color:"#fbbf24", kw:[] },
-  freizeit:     { label:"Freizeit",     icon:"🎉", color:"#a3e635", kw:[] },
-  sonstiges:       { label:"Sonstiges",         icon:"📦", color:"#94a3b8", kw:[] },
-  unkategorisiert: { label:"Nicht kategorisiert", icon:"❓", color:"#475569", kw:[] }
-};
+// CATS is populated from Firestore on login; starts empty
+const CATS = {};
 
-// ── Custom keywords ──
-function loadUserKws() { try { return JSON.parse(localStorage.getItem("finanzcheck_kws") || "{}"); } catch { return {}; } }
-function saveUserKws(kws) { localStorage.setItem("finanzcheck_kws", JSON.stringify(kws)); fsSaveSettings().catch(function(e){console.warn("fs:",e); showToast("⚠️ Keyword nicht in Cloud gespeichert");}); }
-let userKws = loadUserKws();
-
-function loadRemovedKws() { try { return JSON.parse(localStorage.getItem("finanzcheck_removed_kws") || "{}"); } catch { return {}; } }
-function saveRemovedKws(r) { localStorage.setItem("finanzcheck_removed_kws", JSON.stringify(r)); fsSaveSettings().catch(function(e){console.warn("fs:",e); showToast("⚠️ Änderung nicht in Cloud gespeichert");}); }
-let removedKws = loadRemovedKws();
-
+// ── Keyword helpers (all kws live directly on CATS[key].kw) ──
 function allKwsForCat(catKey) {
-  const removed = removedKws[catKey] || [];
-  const builtin = (CATS[catKey]?.kw || []).filter(w => !removed.includes(w));
-  return [...builtin, ...(userKws[catKey] || [])];
+  return (CATS[catKey] && CATS[catKey].kw) ? [...CATS[catKey].kw] : [];
 }
 function addUserKw(catKey, kw) {
   kw = kw.toLowerCase().trim(); if (!kw) return false;
-  if (!userKws[catKey]) userKws[catKey] = [];
-  if (userKws[catKey].includes(kw)) return false;
-  // If it was previously removed from built-in, restore it instead
-  if ((removedKws[catKey] || []).includes(kw)) {
-    removedKws[catKey] = removedKws[catKey].filter(k => k !== kw);
-    saveRemovedKws(removedKws);
-    return true;
-  }
-  userKws[catKey].push(kw); saveUserKws(userKws); return true;
+  if (!CATS[catKey]) return false;
+  if (!CATS[catKey].kw) CATS[catKey].kw = [];
+  if (CATS[catKey].kw.includes(kw)) return false;
+  CATS[catKey].kw.push(kw);
+  fsSaveCats().catch(function(e){ showToast("⚠️ Keyword nicht gespeichert"); });
+  return true;
 }
 function removeUserKw(catKey, kw) {
-  const isBuiltIn = (CATS[catKey]?.kw || []).includes(kw);
-  if (isBuiltIn) {
-    if (!removedKws[catKey]) removedKws[catKey] = [];
-    if (!removedKws[catKey].includes(kw)) removedKws[catKey].push(kw);
-    saveRemovedKws(removedKws);
-  } else {
-    if (!userKws[catKey]) return;
-    userKws[catKey] = userKws[catKey].filter(k => k !== kw);
-    saveUserKws(userKws);
-  }
+  if (!CATS[catKey] || !CATS[catKey].kw) return;
+  CATS[catKey].kw = CATS[catKey].kw.filter(function(k) { return k !== kw; });
+  fsSaveCats().catch(function(e){ showToast("⚠️ Keyword nicht gespeichert"); });
 }
-
-function loadUserCats() { try { return JSON.parse(localStorage.getItem("finanzcheck_cats") || "{}"); } catch { return {}; } }
-function saveUserCats(cats) { localStorage.setItem("finanzcheck_cats", JSON.stringify(cats)); fsSaveSettings().catch(function(e){console.warn("fs:",e); showToast("⚠️ Kategorie nicht in Cloud gespeichert");}); }
-let userCats = loadUserCats();
-function rebuildCats() {
-  // Remove only user-created (non-override) cats first
-  Object.keys(CATS).forEach(k => { if (CATS[k]._user && !CATS[k]._builtinOverride) delete CATS[k]; });
-  Object.entries(userCats).forEach(([k,c]) => {
-    if (c._builtinOverride && CATS[k]) {
-      // Update built-in cat properties without replacing it entirely
-      CATS[k].label = c.label;
-      CATS[k].icon  = c.icon;
-      CATS[k].color = c.color;
-      CATS[k]._builtinOverride = true;
-    } else if (!c._builtinOverride) {
-      CATS[k] = { ...c, _user: true, kw: [] };
-    }
-  });
-}
-rebuildCats();
 
 // Word-boundary keyword match: "obi" matches "OBI ZÜRICH" but not "MOBILEZONE"
 function kwMatch(text, kw) {
@@ -981,13 +846,9 @@ function kwMatch(text, kw) {
 
 function categorize(desc) {
   const l = (desc||"").toLowerCase();
-  for (const [k] of Object.entries(CATS)) {
-    if (k==="sonstiges" || k==="unkategorisiert") continue;
-    if ((userKws[k]||[]).some(w => kwMatch(l, w))) return k;
-  }
   for (const [k,c] of Object.entries(CATS)) {
     if (k==="sonstiges" || k==="unkategorisiert") continue;
-    if ((c.kw||[]).some(w => kwMatch(l, w))) return k;
+    if ((c.kw||[]).some(function(w){ return kwMatch(l, w); })) return k;
   }
   return "unkategorisiert";
 }
@@ -1387,7 +1248,7 @@ function openCatPicker(txIdx) {
         Kein bekanntes Keyword in der Buchung erkannt – deshalb „Sonstiges". Tippe auf eine Kategorie um sie zu ändern und das Keyword zu lernen.
       </div>`;
   } else if (matchedKw) {
-    const isUserKw = (userKws[currentCat]||[]).includes(matchedKw);
+    const isUserKw = true; // all kws are editable now
     reasonHtml = `
       <div style="margin:10px 16px 4px;padding:10px 12px;background:${CATS[currentCat]?.color}18;border:1px solid ${CATS[currentCat]?.color}44;border-radius:10px;font-size:12px;line-height:1.5">
         <span style="font-size:14px">${CATS[currentCat]?.icon}</span>
@@ -1462,7 +1323,7 @@ function pickCat(newCat) {
   // Show keyword popup
   _pendingPickCat = { newCat: newCat, oldCat: tx.category };
   const suggested = extractKeyword(tx.description);
-  const allCatsMap = {...CATS, ...userCats};
+  const allCatsMap = {...CATS};
   const catLabel = (allCatsMap[newCat] || {}).label || newCat;
   document.getElementById("kw-popup-title").textContent = `Keyword für ${catLabel}?`;
   document.getElementById("kw-popup-sub").textContent = `Buchung: „${tx.description || ""}"`;
@@ -1487,7 +1348,7 @@ function applyPickCat(newCat, kw) {
   const oldCat = tx.category;
   if (kw) {
     addUserKw(newCat, kw);
-    if (oldCat && userKws[oldCat]) removeUserKw(oldCat, kw);
+    if (oldCat && oldCat !== newCat) removeUserKw(oldCat, kw);
   }
   tx.category = newCat;
   tx.manual = true;
@@ -1507,7 +1368,7 @@ function applyPickCat(newCat, kw) {
 
   saveTxs();
   closeAllSheets(); render();
-  const allCatsMap = {...CATS, ...userCats};
+  const allCatsMap = {...CATS};
   const catLabel = (allCatsMap[newCat] || {}).label || newCat;
   const catIcon = (allCatsMap[newCat] || {}).icon || "";
   const kwMsg = kw ? ` · "${kw}"` : "";
@@ -1555,9 +1416,7 @@ function renderSettings() {
       </button>
     </div>`;
   const catBlocks = Object.entries(CATS).map(([k,c])=>{
-    const isUser = !!c._user;
-    const myKwCount = (userKws[k]||[]).length;
-    const builtInCount = (c.kw||[]).length;
+    const kwCount = (c.kw||[]).length;
     const txCount = allTxs.filter(t => t.category === k).length;
     return `
     <div onclick="openCatDetail('${k}')" style="display:flex;align-items:center;gap:14px;padding:14px 20px;border-bottom:1px solid var(--border);cursor:pointer;active:background:var(--surface2)">
@@ -1565,7 +1424,7 @@ function renderSettings() {
       <div style="flex:1;min-width:0">
         <div style="font-size:15px;font-weight:600">${c.label}</div>
         <div style="font-size:12px;color:var(--muted);margin-top:2px">
-          ${builtInCount} eingebaut${myKwCount > 0 ? ` · <span style="color:var(--accent)">${myKwCount} eigene</span>` : ""}
+          ${kwCount > 0 ? `${kwCount} Keywords` : "Keine Keywords"}
           ${txCount > 0 ? ` · ${txCount} Buchungen` : ""}
         </div>
       </div>
@@ -1652,8 +1511,7 @@ function openCatDetail(catKey) {
   const c = CATS[catKey];
   if (!c) return;
   const builtInKws = c.kw || [];
-  const myKws = userKws[catKey] || [];
-  const removed = removedKws[catKey] || [];
+  const myKws = (CATS[catKey] && CATS[catKey].kw) ? CATS[catKey].kw : [];
   const txCount = allTxs.filter(t => t.category === catKey).length;
   const totalAmt = allTxs.filter(t => t.category === catKey && t.amount < 0)
     .reduce((s,t) => s + Math.abs(t.amount), 0);
@@ -1709,7 +1567,7 @@ function openCatDetail(catKey) {
         <button onclick="addKwFromDetail('${catKey}')" style="background:var(--accent);color:#0f172a;border:none;border-radius:10px;padding:9px 14px;font-size:14px;font-weight:700;cursor:pointer">+</button>
       </div>
     </div>
-    ${c._user ? `
+    ${(catKey !== 'sonstiges' && catKey !== 'unkategorisiert') ? `
     <div style="padding:0 20px 20px">
       <button onclick="deleteUserCat('${catKey}')" style="width:100%;background:transparent;border:1px solid var(--red);color:var(--red);border-radius:10px;padding:10px;font-size:14px;font-weight:600;cursor:pointer">
         🗑 Kategorie löschen
@@ -1775,9 +1633,7 @@ function addKwFromDetail(catKey) {
 }
 
 function restoreBuiltInKw(catKey, kw) {
-  if (!removedKws[catKey]) return;
-  removedKws[catKey] = removedKws[catKey].filter(k => k !== kw);
-  saveRemovedKws(removedKws);
+  // kws now live on CATS directly — removeUserKw/addUserKw handle everything
   const count = applyKeywordToCat(catKey, kw);
   openCatDetail(catKey);
   showToast(`✅ „${kw}" wiederhergestellt${count ? ` · ${count} Buchung${count!==1?"en":""} kategorisiert` : ""}`);
@@ -1914,14 +1770,12 @@ function saveNewCat() {
     CATS[key].icon  = emoji;
     CATS[key].color = selectedColor;
     // If it's a user-created cat, persist it
-    if (userCats[key]) {
-      userCats[key] = { ...userCats[key], label: name, icon: emoji, color: selectedColor };
-    } else {
-      // Built-in cat: save overrides in userCats so they survive reload
-      userCats[key] = { label: name, icon: emoji, color: selectedColor, _builtinOverride: true };
+    if (CATS[key]) {
+      CATS[key].label = name;
+      CATS[key].icon  = emoji;
+      CATS[key].color = selectedColor;
     }
-    saveUserCats(userCats);
-    rebuildCats();
+    fsSaveCats().catch(function(e){ showToast("⚠️ Kategorie nicht gespeichert"); });
     closeAllSheets(); render(); renderSettings();
     showToast(`✅ „${name}" gespeichert`);
     return;
@@ -1929,8 +1783,8 @@ function saveNewCat() {
 
   // CREATE mode
   const key = "custom_" + name.toLowerCase().replace(/\s+/g,"_").replace(/[^a-z0-9_]/g,"") + "_" + Date.now();
-  userCats[key] = { label: name, icon: emoji, color: selectedColor }; saveUserCats(userCats);
-  rebuildCats();
+  CATS[key] = { label: name, icon: emoji, color: selectedColor, kw: [] };
+  fsSaveCats().catch(function(e){ showToast("⚠️ Kategorie nicht gespeichert"); });
   closeAllSheets(); render(); renderSettings();
   showToast(`✅ „${name}" erstellt`);
 }
@@ -1941,9 +1795,9 @@ function deleteUserCat(key) {
 function _deleteUserCatConfirmed(key) {
   allTxs.forEach(t => { if (t.category === key) t.category = "sonstiges"; });
   saveTxs();
-  delete userCats[key]; saveUserCats(userCats);
-  delete userKws[key]; saveUserKws(userKws);
-  rebuildCats(); render();
+  delete CATS[key];
+  fsSaveCats().catch(function(e){ showToast("⚠️ Kategorie nicht gespeichert"); });
+  render();
   closeAllSheets();
   setTimeout(() => { renderSettings(); openSheet("settings-sheet"); }, 300);
   showToast("🗑 Kategorie gelöscht");
@@ -2464,7 +2318,7 @@ function renderPrognose() {
   const monthExp = months.map(m => exp.filter(t=>mk(t.date)===m).reduce((s,t)=>s+normE(t),0));
   const monthInc = months.map(m => inc.filter(t=>mk(t.date)===m).reduce((s,t)=>s+normI(t),0));
   const summAcc = acc === "all" ? "zkb" : acc;
-  const allCatsMap = {...CATS, ...userCats};
+  const allCatsMap = {...CATS};
   const allCatKeys = Object.keys(allCatsMap);
   const barCanvas = document.getElementById("bar-long");
 
