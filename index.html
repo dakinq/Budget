@@ -757,6 +757,16 @@ async function fsSaveSettings() {
     });
   }
   if (!currentUser) return;
+  // Merge built-in CATS into userCats so everything is stored in Firestore
+  const allCatsToSave = {};
+  Object.entries(CATS).forEach(function([k, c]) {
+    allCatsToSave[k] = { label: c.label, icon: c.icon, color: c.color, _user: true };
+  });
+  Object.entries(userCats).forEach(function([k, c]) {
+    allCatsToSave[k] = c;
+  });
+  userCats = allCatsToSave;
+  localStorage.setItem("finanzcheck_cats", JSON.stringify(userCats));
   await db.collection("shared").doc("data").collection("settings").doc("config").set(
     { userKws: userKws, removedKws: removedKws, userCats: userCats, eurToChf: eurToChf }
   );
@@ -1389,7 +1399,6 @@ function applyPickCat(newCat, kw) {
     });
   }
 
-  saveTxs();
   closeAllSheets(); render();
   const allCatsMap = {...CATS, ...userCats};
   const catLabel = (allCatsMap[newCat] || {}).label || newCat;
@@ -1397,6 +1406,12 @@ function applyPickCat(newCat, kw) {
   const kwMsg = kw ? ` · "${kw}"` : "";
   const reMsg = reCatCount > 0 ? ` · ${reCatCount} weitere` : "";
   showToast(`${catIcon} ${catLabel}${kwMsg}${reMsg}`);
+  // Save to localStorage immediately, then await Firestore
+  try { localStorage.setItem("finanzcheck_txs", JSON.stringify(allTxs)); } catch(e) {}
+  fsSaveTxs().catch(function(e) {
+    console.warn("Firestore saveTxs:", e);
+    showToast("⚠️ Lokal gespeichert, Cloud-Sync fehlgeschlagen");
+  });
 }
 
 // ── Settings ──
@@ -1449,8 +1464,7 @@ function renderSettings() {
       <div style="flex:1;min-width:0">
         <div style="font-size:15px;font-weight:600">${c.label}</div>
         <div style="font-size:12px;color:var(--muted);margin-top:2px">
-          ${builtInCount} eingebaut${myKwCount > 0 ? ` · <span style="color:var(--accent)">${myKwCount} eigene</span>` : ""}
-          ${txCount > 0 ? ` · ${txCount} Buchungen` : ""}
+          ${myKwCount > 0 ? `<span style="color:var(--accent)">${myKwCount} Keywords</span>` : ""}${myKwCount > 0 && txCount > 0 ? " · " : ""}${txCount > 0 ? `${txCount} Buchungen` : ""}
         </div>
       </div>
       <span style="color:var(--muted);font-size:18px">›</span>
@@ -1617,7 +1631,7 @@ function applyKeywordToCat(catKey, kw) {
   return count;
 }
 
-function reCategorizeAll() {
+async function reCategorizeAll() {
   const toRecat = allTxs.filter(t => !t.manual);
   if (toRecat.length === 0) {
     showToast("ℹ️ Keine Buchungen zum Kategorisieren");
@@ -1632,9 +1646,16 @@ function reCategorizeAll() {
     }
   });
   if (count > 0) {
-    saveTxs();
     render();
-    showToast(`✅ ${count} Buchung${count !== 1 ? "en" : ""} neu kategorisiert`);
+    showToast("⏳ Speichere " + count + " Buchung" + (count !== 1 ? "en" : "") + "…");
+    try {
+      localStorage.setItem("finanzcheck_txs", JSON.stringify(allTxs));
+      await fsSaveTxs();
+      showToast("✅ " + count + " Buchung" + (count !== 1 ? "en" : "") + " kategorisiert & gespeichert");
+    } catch(e) {
+      console.warn("Firestore saveTxs:", e);
+      showToast("⚠️ Lokal gespeichert, Cloud-Sync fehlgeschlagen");
+    }
   } else {
     showToast("✅ Alle Buchungen bereits aktuell");
   }
