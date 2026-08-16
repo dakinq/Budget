@@ -839,17 +839,46 @@ async function fsLoadAll() {
   }
 }
 
-async function fsSaveTxs() {
+async function fsSaveTxs(changedIndices) {
   if (!currentUser) { fsLog('fsSaveTxs: kein User', 'err'); return; }
-  fsLog('fsSaveTxs: starte (' + allTxs.length + ' Transaktionen)', 'info');
+  const col = db.collection("shared").doc("data").collection("txs");
+
+  // If specific indices given: only update those docs (fast path)
+  if (changedIndices && changedIndices.length > 0) {
+    fsLog('fsSaveTxs: update ' + changedIndices.length + ' Transaktionen', 'info');
+    try {
+      const batch = db.batch();
+      changedIndices.forEach(function(i) {
+        batch.set(col.doc(String(i)), allTxs[i]);
+      });
+      await batch.commit();
+      fsLog('fsSaveTxs: OK (' + changedIndices.length + ' Docs)', 'ok');
+    } catch(e) {
+      fsLog('fsSaveTxs: FEHLER ' + (e.code || e.message), 'err');
+      throw e;
+    }
+    return;
+  }
+
+  // Full rewrite fallback (e.g. CSV import)
+  fsLog('fsSaveTxs: Vollschreiben (' + allTxs.length + ' Transaktionen)', 'info');
   try {
-    const col = db.collection("shared").doc("data").collection("txs");
-    const batch = db.batch();
     const existing = await col.get();
-    existing.docs.forEach(function(d) { batch.delete(d.ref); });
-    allTxs.forEach(function(t, i) { batch.set(col.doc(String(i)), t); });
-    await batch.commit();
-    fsLog('fsSaveTxs: OK', 'ok');
+    // Delete+write in chunks of 400 to stay under Firestore batch limit
+    const CHUNK = 400;
+    const delDocs = existing.docs;
+    for (let i = 0; i < delDocs.length; i += CHUNK) {
+      const b = db.batch();
+      delDocs.slice(i, i + CHUNK).forEach(function(d) { b.delete(d.ref); });
+      await b.commit();
+    }
+    for (let i = 0; i < allTxs.length; i += CHUNK) {
+      const b = db.batch();
+      allTxs.slice(i, i + CHUNK).forEach(function(t, j) { b.set(col.doc(String(i + j)), t); });
+      await b.commit();
+      fsLog('fsSaveTxs: chunk ' + Math.floor(i/CHUNK)+1 + ' OK', 'info');
+    }
+    fsLog('fsSaveTxs: Vollschreiben OK', 'ok');
   } catch(e) {
     fsLog('fsSaveTxs: FEHLER ' + (e.code || e.message), 'err');
     throw e;
@@ -1225,9 +1254,9 @@ function showToast(msg) {
 }
 
 // ── State ──
-function saveTxs() {
+function saveTxs(changedIndices) {
   try { localStorage.setItem("finanzcheck_txs", JSON.stringify(allTxs)); } catch(e) {}
-  fsSaveTxs().then(function() {
+  fsSaveTxs(changedIndices).then(function() {
     // success already logged inside fsSaveTxs
   }).catch(function(e) {
     fsLog('saveTxs catch: ' + (e.code || e.message), 'err');
@@ -1449,6 +1478,7 @@ function applyPickCat(newCat, kw) {
   }
   tx.category = newCat;
   tx.manual = true;
+  const changedIndices = [pickerTxIndex];
 
   // Re-categorize all other non-manual transactions that match the new keyword
   let reCatCount = 0;
@@ -1458,16 +1488,19 @@ function applyPickCat(newCat, kw) {
       if (t.manual) return;
       if ((t.description || "").toLowerCase().includes(kw)) {
         t.category = newCat;
+        changedIndices.push(i);
         reCatCount++;
       }
     });
   }
 
-  saveTxs();
-  closeAllSheets(); render();
   const allCatsMap = {...CATS};
   const catLabel = (allCatsMap[newCat] || {}).label || newCat;
   const catIcon = (allCatsMap[newCat] || {}).icon || "";
+  fsLog('Manuell: „' + (tx.description || '').slice(0,30) + '" → ' + catLabel + (kw ? ' [kw: ' + kw + ']' : '') + (reCatCount > 0 ? ' +' + reCatCount + ' weitere' : ''), 'info');
+
+  saveTxs(changedIndices);
+  closeAllSheets(); render();
   const kwMsg = kw ? ` · "${kw}"` : "";
   const reMsg = reCatCount > 0 ? ` · ${reCatCount} weitere` : "";
   showToast(`${catIcon} ${catLabel}${kwMsg}${reMsg}`);
@@ -1694,19 +1727,23 @@ function reCategorizeAll() {
     showToast("ℹ️ Keine Buchungen zum Kategorisieren");
     return;
   }
-  let count = 0;
-  toRecat.forEach(t => {
+  fsLog('Neu kategorisieren: starte (' + toRecat.length + ' nicht-manuelle Buchungen)', 'info');
+  const changedIndices = [];
+  allTxs.forEach(function(t, i) {
+    if (t.manual) return;
     const newCat = categorize(t.description);
     if (newCat !== t.category) {
       t.category = newCat;
-      count++;
+      changedIndices.push(i);
     }
   });
-  if (count > 0) {
-    saveTxs();
+  if (changedIndices.length > 0) {
+    fsLog('Neu kategorisieren: ' + changedIndices.length + ' Buchungen geändert', 'info');
+    saveTxs(changedIndices);
     render();
-    showToast(`✅ ${count} Buchung${count !== 1 ? "en" : ""} neu kategorisiert`);
+    showToast(`✅ ${changedIndices.length} Buchung${changedIndices.length !== 1 ? "en" : ""} neu kategorisiert`);
   } else {
+    fsLog('Neu kategorisieren: keine Änderungen', 'info');
     showToast("✅ Alle Buchungen bereits aktuell");
   }
 }
