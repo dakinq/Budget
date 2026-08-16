@@ -717,22 +717,36 @@ async function _doLogoutConfirmed() {
 // ── Log system ──
 const _fsLogEntries = [];
 function fsLog(msg, type) {
-  // type: 'info' | 'ok' | 'err'
   const t = new Date();
   const ts = t.toTimeString().slice(0,8) + '.' + String(t.getMilliseconds()).padStart(3,'0');
   const icon = type === 'ok' ? '✅' : type === 'err' ? '❌' : 'ℹ️';
-  _fsLogEntries.push(ts + ' ' + icon + ' ' + msg);
-  console.log('[FS]', ts, icon, msg);
+  const entry = ts + ' ' + icon + ' ' + msg;
+  _fsLogEntries.push(entry);
+  console.log('[FS]', entry);
+  // Live append if log sheet is visible
+  const sheet = document.getElementById('fslog-sheet');
+  if (sheet && sheet.classList.contains('open')) {
+    const el = document.getElementById('fslog-content');
+    const empty = el.querySelector('.fslog-empty');
+    if (empty) empty.remove();
+    const color = type === 'err' ? 'var(--red)' : type === 'ok' ? 'var(--green)' : 'var(--fg)';
+    const row = document.createElement('div');
+    row.style.cssText = 'color:' + color + ';padding:3px 0;border-bottom:1px solid var(--border);word-break:break-all';
+    row.textContent = entry;
+    el.appendChild(row);
+    el.scrollTop = el.scrollHeight;
+  }
 }
 function openFsLog() {
   const el = document.getElementById('fslog-content');
   if (_fsLogEntries.length === 0) {
-    el.innerHTML = '<div style="color:var(--muted);padding:8px">Noch keine Einträge.</div>';
+    el.innerHTML = '<div class="fslog-empty" style="color:var(--muted);padding:8px">Noch keine Einträge.</div>';
   } else {
     el.innerHTML = _fsLogEntries.map(function(e) {
       const color = e.includes('❌') ? 'var(--red)' : e.includes('✅') ? 'var(--green)' : 'var(--fg)';
       return '<div style="color:' + color + ';padding:3px 0;border-bottom:1px solid var(--border);word-break:break-all">' + e + '</div>';
     }).join('');
+    el.scrollTop = el.scrollHeight;
   }
   openSheet('fslog-sheet');
 }
@@ -741,7 +755,6 @@ function copyFsLog() {
   navigator.clipboard.writeText(text).then(function() {
     showToast('📋 Log kopiert');
   }).catch(function() {
-    // fallback
     const ta = document.createElement('textarea');
     ta.value = text; document.body.appendChild(ta);
     ta.select(); document.execCommand('copy');
@@ -843,16 +856,21 @@ async function fsSaveTxs(changedIndices) {
   if (!currentUser) { fsLog('fsSaveTxs: kein User', 'err'); return; }
   const col = db.collection("shared").doc("data").collection("txs");
 
-  // If specific indices given: only update those docs (fast path)
+  // If specific indices given: only update those docs (fast path, chunked)
   if (changedIndices && changedIndices.length > 0) {
-    fsLog('fsSaveTxs: update ' + changedIndices.length + ' Transaktionen', 'info');
+    const total = changedIndices.length;
+    fsLog('fsSaveTxs: update ' + total + ' Transaktionen', 'info');
     try {
-      const batch = db.batch();
-      changedIndices.forEach(function(i) {
-        batch.set(col.doc(String(i)), allTxs[i]);
-      });
-      await batch.commit();
-      fsLog('fsSaveTxs: OK (' + changedIndices.length + ' Docs)', 'ok');
+      const CHUNK = 400;
+      let saved = 0;
+      for (let c = 0; c < changedIndices.length; c += CHUNK) {
+        const chunk = changedIndices.slice(c, c + CHUNK);
+        const b = db.batch();
+        chunk.forEach(function(i) { b.set(col.doc(String(i)), allTxs[i]); });
+        await b.commit();
+        saved += chunk.length;
+        fsLog('fsSaveTxs: ' + saved + '/' + total + ' gespeichert', saved < total ? 'info' : 'ok');
+      }
     } catch(e) {
       fsLog('fsSaveTxs: FEHLER ' + (e.code || e.message), 'err');
       throw e;
@@ -1257,7 +1275,8 @@ function showToast(msg) {
 function saveTxs(changedIndices) {
   try { localStorage.setItem("finanzcheck_txs", JSON.stringify(allTxs)); } catch(e) {}
   fsSaveTxs(changedIndices).then(function() {
-    // success already logged inside fsSaveTxs
+    const n = changedIndices ? changedIndices.length : allTxs.length;
+    showToast('✅ ' + n + ' Buchung' + (n !== 1 ? 'en' : '') + ' gespeichert');
   }).catch(function(e) {
     fsLog('saveTxs catch: ' + (e.code || e.message), 'err');
     showToast('❌ Nicht gespeichert: ' + (e.code || e.message || 'Unbekannter Fehler'));
