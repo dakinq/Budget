@@ -755,6 +755,27 @@ async function fsLoadAll() {
   if (settSnap.exists) {
     const s = settSnap.data();
     if (s.eurToChf) { eurToChf = s.eurToChf; localStorage.setItem("finanzcheck_eurChf", String(eurToChf)); }
+
+    // ── One-time migration: merge old userKws into CATS[key].kw ──
+    if (s.userKws && Object.keys(s.userKws).length > 0) {
+      let changed = false;
+      Object.entries(s.userKws).forEach(function([cat, kws]) {
+        if (!CATS[cat] || !Array.isArray(kws)) return;
+        kws.forEach(function(kw) {
+          if (!CATS[cat].kw.includes(kw)) {
+            CATS[cat].kw.push(kw);
+            changed = true;
+          }
+        });
+      });
+      if (changed) {
+        await fsSaveCats();
+        // Clear old userKws from settings so this only runs once
+        await db.collection("shared").doc("data").collection("settings").doc("config").set(
+          { eurToChf: eurToChf }, { merge: false }
+        );
+      }
+    }
   }
 }
 
