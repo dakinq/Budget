@@ -94,13 +94,16 @@
 
     /* Burger button */
     .burger-btn {
-      display: flex; flex-direction: column; justify-content: center; gap: 5px;
-      width: 38px; height: 38px; background: var(--surface2);
-      border: 1px solid var(--border); border-radius: 10px;
-      cursor: pointer; padding: 8px 9px; flex-shrink: 0;
+      display: flex; align-items: center; justify-content: center;
+      width: 38px; height: 38px; background: none;
+      border: none;
+      border-radius: 10px;
+      cursor: pointer; flex-shrink: 0;
+      font-size: 22px; color: var(--text);
+      line-height: 1;
     }
     .burger-btn span {
-      display: block; height: 2px; background: var(--text);
+      display: block; height: 2px; width: 100%; background: var(--text);
       border-radius: 2px; transition: all .2s;
     }
     /* Burger menu sheet rows */
@@ -164,6 +167,48 @@
 
     /* Bar chart */
     .bar-wrap { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 16px; }
+
+    /* Bar legend */
+    #bar-legend {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 6px;
+      padding: 10px 4px 0;
+    }
+    .legend-chip {
+      display: flex; align-items: center; gap: 8px;
+      padding: 7px 10px; border-radius: 10px;
+      cursor: pointer;
+      border: 1.5px solid transparent;
+      background: var(--surface2);
+      transition: all .15s;
+      user-select: none;
+      overflow: hidden;
+    }
+    .legend-chip:active { opacity: 0.75; }
+    .legend-chip.active {
+      border-color: currentColor;
+    }
+    .legend-chip-dot {
+      width: 10px; height: 10px; border-radius: 3px;
+      flex-shrink: 0;
+    }
+    .legend-chip-label {
+      font-size: 12px; font-weight: 500;
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+      color: var(--muted);
+    }
+    .legend-chip.active .legend-chip-label { color: currentColor; font-weight: 600; }
+    .legend-back-btn {
+      grid-column: 1 / -1;
+      display: flex; align-items: center; gap: 8px;
+      padding: 8px 12px; border-radius: 10px;
+      border: 1.5px solid var(--border);
+      background: var(--surface2); color: var(--muted);
+      font-size: 13px; font-weight: 600; cursor: pointer;
+      width: 100%;
+    }
+    .legend-back-btn:active { opacity: 0.75; }
 
     /* TX list */
     .tx-list { display: flex; flex-direction: column; gap: 2px; }
@@ -446,35 +491,24 @@
   <div style="font-size:48px;margin-bottom:16px">&#x1F4B0;</div>
   <div style="font-size:24px;font-weight:700;margin-bottom:6px">Finanzcheck</div>
   <div style="font-size:14px;color:var(--muted);margin-bottom:32px;text-align:center">Melde dich an um deine Finanzen zu sehen</div>
-  <form onsubmit="doLogin();return false;" style="width:100%;max-width:340px;display:flex;flex-direction:column;gap:12px">
+  <div style="width:100%;max-width:340px;display:flex;flex-direction:column;gap:12px">
     <input id="auth-email" type="email" placeholder="E-Mail" autocomplete="email"
       style="width:100%;background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:14px 16px;color:var(--text);font-size:16px;outline:none"
       onfocus="this.style.borderColor='var(--accent)'" onblur="this.style.borderColor='var(--border)'"
     />
-    <input id="auth-password" type="password" placeholder="Passwort" autocomplete="current-password"
+    <input id="auth-password" type="password" placeholder="Passwort" autocomplete="current-password" onkeydown="if(event.key==='Enter')doLogin()"
       style="width:100%;background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:14px 16px;color:var(--text);font-size:16px;outline:none"
       onfocus="this.style.borderColor='var(--accent)'" onblur="this.style.borderColor='var(--border)'"
     />
     <div id="auth-error" style="font-size:13px;color:var(--red);text-align:center;min-height:18px"></div>
-    <button type="submit" id="login-btn"
+    <button type="button" id="login-btn" onclick="doLogin()"
       style="width:100%;background:var(--accent);color:#0f172a;border:none;border-radius:12px;padding:14px;font-size:16px;font-weight:700;cursor:pointer">Anmelden</button>
     <button type="button" onclick="doRegister()"
       style="width:100%;background:transparent;border:1px solid var(--border);border-radius:12px;padding:12px;font-size:14px;color:var(--muted);cursor:pointer">Konto erstellen</button>
-  </form>
+  </div>
 </div>
 
 <div class="tabs-wrapper" style="display:none">
-  <!-- Bottom Nav Bar (visible on Desktop & as fallback) -->
-  <nav class="bottom-nav" id="bottom-nav">
-    <button class="bottom-nav-btn active" id="nav-dashboard" onclick="switchTab(0)">
-      <span class="bottom-nav-icon">💰</span>
-      <span class="bottom-nav-label">Dashboard</span>
-    </button>
-    <button class="bottom-nav-btn" id="nav-prognose" onclick="switchTab(1)">
-      <span class="bottom-nav-icon">📈</span>
-      <span class="bottom-nav-label">Prognose</span>
-    </button>
-  </nav>
   <div class="tabs-slider" id="tabs-slider">
 
     <!-- DASHBOARD SCREEN -->
@@ -484,12 +518,7 @@
           <span style="font-size:22px">💰</span>
           <span class="app-title">Finanzcheck</span>
         </div>
-        <button class="burger-btn" onclick="openBurger()" aria-label="Menü">
-          <span></span><span></span><span></span>
-        </button>
-      </div>
-
-      <!-- Account Switcher -->
+        <button class="burger-btn" onclick="openBurger()" aria-label="Menü"><span style="font-size:22px;color:var(--text);line-height:1">☰</span></button>
       <div class="account-switcher" id="account-switcher-dash">
         <button class="account-btn active" id="acc-btn-all" onclick="setAccount('all')">
           Alle Konten
@@ -546,9 +575,7 @@
           <span style="font-size:22px">📈</span>
           <span class="app-title">Prognose</span>
         </div>
-        <button class="burger-btn" onclick="openBurger()" aria-label="Menü">
-          <span></span><span></span><span></span>
-        </button>
+        <button class="burger-btn" onclick="openBurger()" aria-label="Menü"><span style="font-size:22px;color:var(--text);line-height:1">☰</span></button>
       </div>
 
       <!-- Account Switcher (Prognose) -->
@@ -562,7 +589,7 @@
         <div class="sec">
           <div class="sec-title" id="bar-chart-title">Monatsverlauf — Ausgaben</div>
           <div class="bar-wrap"><canvas id="bar-long" width="280" height="160" style="width:100%;height:auto"></canvas></div>
-          <div id="bar-legend" style="display:flex;flex-wrap:wrap;gap:6px 12px;padding:8px 4px 0"></div>
+          <div id="bar-legend"></div>
         </div>
         <div class="cards" id="prog-stats"></div>
         <div class="sec">
@@ -722,10 +749,11 @@ async function fsSaveSettings() {
 }
 
 // ── Auth state observer ────────────────────────────────────────────
+var authReady = false;
 auth.onAuthStateChanged(async function(user) {
   if (user) {
+    authReady = true;
     currentUser = user;
-    // Show logout row in burger menu
     var logoutRow = document.getElementById("burger-logout-row");
     if (logoutRow) logoutRow.style.display = "flex";
     hideLogin();
@@ -734,7 +762,8 @@ auth.onAuthStateChanged(async function(user) {
   } else {
     currentUser = null;
     allTxs = [];
-    showLogin();
+    // Only show login if auth was never confirmed — prevents iOS double-fire bug
+    if (!authReady) showLogin();
   }
 });
 
@@ -2279,7 +2308,7 @@ function renderPrognose() {
     drawStackedBar(barCanvas, months.map(m => ml(m).split(" ")[0]), [{ color: cat.color, values: catVals }], catVals);
     document.getElementById("bar-chart-title").textContent = `${cat.icon} ${cat.label} — Monatsverlauf`;
     document.getElementById("bar-legend").innerHTML =
-      `<button onclick="selectPrognoseCat(null)" style="background:none;border:1px solid var(--border);border-radius:8px;color:var(--muted);font-size:12px;padding:3px 10px;cursor:pointer">← Alle Kategorien</button>`;
+      `<button class="legend-back-btn" onclick="selectPrognoseCat(null)">← Alle Kategorien</button>`;
   } else {
     const catBarData = allCatKeys.map(k => {
       const color = (allCatsMap[k] || {}).color || "#94a3b8";
@@ -2294,9 +2323,12 @@ function renderPrognose() {
       const cat = allCatsMap[c.key];
       if (!cat) return "";
       const isActive = activePrognoseCat === c.key;
-      return `<div onclick="selectPrognoseCat('${c.key}')" style="display:flex;align-items:center;gap:5px;font-size:12px;cursor:pointer;padding:4px 8px;border-radius:8px;border:1px solid ${isActive ? cat.color : 'transparent'};background:${isActive ? cat.color + '22' : 'transparent'};color:${isActive ? cat.color : 'var(--muted)'};transition:all .15s;user-select:none">
-        <span style="width:10px;height:10px;border-radius:3px;background:${cat.color};flex-shrink:0;display:inline-block"></span>
-        ${cat.icon} ${cat.label}
+      return `<div
+        onclick="selectPrognoseCat('${c.key}')"
+        class="legend-chip${isActive ? ' active' : ''}"
+        style="color:${cat.color}${isActive ? ';background:' + cat.color + '18' : ''}">
+        <span class="legend-chip-dot" style="background:${cat.color}"></span>
+        <span class="legend-chip-label">${cat.icon} ${cat.label}</span>
       </div>`;
     }).join("");
   }
@@ -2363,7 +2395,6 @@ function renderPrognose() {
   `;
 }
 
-render();
 </script>
 </body>
 </html>
