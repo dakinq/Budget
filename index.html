@@ -402,9 +402,13 @@
       <span class="burger-row-icon">⚙️</span>
       <span>Einstellungen</span>
     </div>
-    <div class="burger-row" onclick="closeBurgerThen(openFirestoreCheck)">
+    <div class="burger-row" onclick="closeBurgerThen(migrateBuiltinCatsToFirestore)">
       <span class="burger-row-icon">☁️</span>
-      <span>Firestore prüfen</span>
+      <span>Kategorien → Firestore migrieren</span>
+    </div>
+    <div class="burger-row" onclick="closeBurgerThen(checkFirestoreCats)">
+      <span class="burger-row-icon">🔍</span>
+      <span>Kategorien in Firestore prüfen</span>
     </div>
     <div class="burger-row danger" onclick="closeBurgerThen(clearData)">
       <span class="burger-row-icon">🗑</span>
@@ -433,18 +437,6 @@
     <span class="sheet-title">Monat wählen</span>
   </div>
   <div id="month-picker-list"></div>
-</div>
-
-<!-- FIRESTORE CHECK SHEET -->
-<div class="bottom-sheet" id="firestore-check-sheet">
-  <div class="sheet-handle" style="cursor:pointer" onclick="closeAllSheets()"></div>
-  <div class="sheet-header">
-    <span class="sheet-title">☁️ Firestore Status</span>
-    <button onclick="closeAllSheets()" style="background:none;border:none;color:var(--muted);font-size:22px;cursor:pointer;padding:0 4px">×</button>
-  </div>
-  <div class="sheet-scroll-inner" id="firestore-check-content">
-    <div style="padding:32px;text-align:center;color:var(--muted)">Wird geladen…</div>
-  </div>
 </div>
 
 <!-- SETTINGS SHEET -->
@@ -731,6 +723,20 @@ async function fsLoadAll() {
     // Persist merged state back to localStorage
     try { localStorage.setItem("finanzcheck_txs", JSON.stringify(allTxs)); } catch(e) {}
   }
+
+  // ── Load builtin categories from Firestore (if migrated) ──
+  try {
+    const catsSnap = await db.collection("shared").doc("data").collection("builtinCats").get();
+    if (!catsSnap.empty) {
+      // Clear current builtin keys (non-user) and replace with Firestore values
+      Object.keys(CATS).forEach(k => { if (!CATS[k]._user) delete CATS[k]; });
+      catsSnap.docs.forEach(function(d) {
+        const data = d.data();
+        CATS[d.id] = { label: data.label, icon: data.icon, color: data.color, kw: data.kw || [] };
+      });
+    }
+  } catch(e) { console.warn("builtinCats load error:", e); }
+
   const settSnap = await db.collection("shared").doc("data").collection("settings").doc("config").get();
   if (settSnap.exists) {
     const s = settSnap.data();
@@ -761,23 +767,6 @@ async function fsSaveTxs() {
   await batch.commit();
 }
 
-async function migrateCatsToFirestore() {
-  // Only migrate built-in cats that are not yet in userCats (don't overwrite user changes)
-  const builtinKeys = ["lebensmittel","restaurant","transport","shopping","drogerie","medizin","wohnen","freizeit","sonstiges","unkategorisiert"];
-  let changed = false;
-  builtinKeys.forEach(function(k) {
-    if (!userCats[k] && CATS[k]) {
-      userCats[k] = { label: CATS[k].label, icon: CATS[k].icon, color: CATS[k].color, _user: true };
-      changed = true;
-    }
-  });
-  if (changed) {
-    localStorage.setItem("finanzcheck_cats", JSON.stringify(userCats));
-    try { await fsSaveSettings(); console.log("Migration: built-in cats written to Firestore"); }
-    catch(e) { console.warn("Migration save failed:", e); }
-  }
-}
-
 async function fsSaveSettings() {
   // If currentUser not yet set, wait up to 3s for auth to complete
   if (!currentUser) {
@@ -795,6 +784,130 @@ async function fsSaveSettings() {
   );
 }
 
+// ── Loading helpers ───────────────────────────────────────────────
+function showLoading(msg) {
+  document.getElementById("loading").style.display = "flex";
+  document.getElementById("load-txt").textContent = msg || "Laden…";
+}
+function hideLoading() {
+  document.getElementById("loading").style.display = "none";
+}
+
+// ── Kategorien-Migration: Builtin CATS → Firestore ─────────────────
+const BUILTIN_CATS_SNAPSHOT = {
+  lebensmittel: { label:"Lebensmittel", icon:"🛒", color:"#4ade80", kw:[] },
+  restaurant:   { label:"Restaurant",   icon:"🍽", color:"#fb923c", kw:[] },
+  transport:    { label:"Transport",    icon:"🚗", color:"#60a5fa", kw:[] },
+  shopping:     { label:"Shopping",     icon:"🛍", color:"#c084fc", kw:[] },
+  drogerie:     { label:"Drogerie",      icon:"🧴", color:"#2dd4bf", kw:[] },
+  medizin:      { label:"Ärzte / Medizin", icon:"🏥", color:"#f87171", kw:[] },
+  wohnen:       { label:"Wohnen",       icon:"🏠", color:"#fbbf24", kw:[] },
+  freizeit:     { label:"Freizeit",     icon:"🎉", color:"#a3e635", kw:[] },
+  sonstiges:       { label:"Sonstiges",         icon:"📦", color:"#94a3b8", kw:[] },
+  unkategorisiert: { label:"Nicht kategorisiert", icon:"❓", color:"#475569", kw:[] }
+};
+
+async function migrateBuiltinCatsToFirestore() {
+  if (!currentUser) { showToast("⚠️ Bitte zuerst anmelden"); return; }
+  showLoading("Kategorien werden hochgeladen…");
+  try {
+    const catsCol = db.collection("shared").doc("data").collection("builtinCats");
+    // Check if already migrated
+    const existing = await catsCol.get();
+    const existingKeys = existing.docs.map(d => d.id);
+    const toWrite = Object.entries(BUILTIN_CATS_SNAPSHOT).filter(([k]) => !existingKeys.includes(k));
+
+    if (toWrite.length === 0) {
+      hideLoading();
+      showToast("✅ Alle Kategorien bereits in Firestore vorhanden");
+      return;
+    }
+
+    const batch = db.batch();
+    toWrite.forEach(function([key, cat]) {
+      batch.set(catsCol.doc(key), { ...cat, _builtin: true });
+    });
+    await batch.commit();
+    hideLoading();
+    showToast("✅ " + toWrite.length + " Kategorien in Firestore gespeichert");
+  } catch(e) {
+    hideLoading();
+    console.error("Migration error:", e);
+    showToast("❌ Fehler: " + e.message);
+  }
+}
+
+async function checkFirestoreCats() {
+  if (!currentUser) { showToast("⚠️ Bitte zuerst anmelden"); return; }
+  showLoading("Kategorien werden geprüft…");
+  try {
+    const catsCol = db.collection("shared").doc("data").collection("builtinCats");
+    const snap = await catsCol.get();
+    hideLoading();
+
+    const found = {};
+    snap.docs.forEach(d => { found[d.id] = d.data(); });
+    const builtinKeys = Object.keys(BUILTIN_CATS_SNAPSHOT);
+    const missingKeys = builtinKeys.filter(k => !found[k]);
+    const extraKeys = Object.keys(found).filter(k => !builtinKeys.includes(k));
+
+    // Build result popup
+    let html = `<div style="font-size:15px;font-weight:700;margin-bottom:14px">🔍 Firestore Kategorien-Check</div>`;
+    html += `<div style="font-size:13px;color:var(--muted);margin-bottom:10px">Gespeichert: <b style="color:var(--green)">${snap.docs.length}</b> | Erwartet: <b>${builtinKeys.length}</b></div>`;
+
+    if (snap.docs.length === 0) {
+      html += `<div style="color:var(--red);font-size:13px;margin-bottom:10px">❌ Noch keine Kategorien in Firestore – bitte Migration ausführen.</div>`;
+    } else {
+      html += `<div style="display:flex;flex-direction:column;gap:6px;margin-bottom:12px">`;
+      builtinKeys.forEach(k => {
+        const inFS = !!found[k];
+        const cat = BUILTIN_CATS_SNAPSHOT[k];
+        html += `<div style="display:flex;align-items:center;gap:10px;padding:8px 12px;border-radius:10px;background:var(--surface2)">
+          <span style="font-size:18px">${cat.icon}</span>
+          <span style="flex:1;font-size:13px;font-weight:500">${cat.label}</span>
+          <span style="font-size:13px;font-weight:700;color:${inFS ? 'var(--green)' : 'var(--red)'}">${inFS ? '✅' : '❌ fehlt'}</span>
+        </div>`;
+      });
+      if (extraKeys.length > 0) {
+        html += `<div style="font-size:12px;color:var(--muted);margin-top:4px">+ ${extraKeys.length} extra: ${extraKeys.join(', ')}</div>`;
+      }
+      html += `</div>`;
+      if (missingKeys.length > 0) {
+        html += `<div style="color:var(--red);font-size:13px;margin-bottom:10px">⚠️ ${missingKeys.length} Kategorie(n) fehlen. Bitte Migration ausführen.</div>`;
+      } else {
+        html += `<div style="color:var(--green);font-size:13px;margin-bottom:10px">✅ Alle Kategorien vollständig in Firestore!</div>`;
+      }
+    }
+
+    // Show in a modal
+    const overlay = document.getElementById("confirm-overlay");
+    const msg = document.getElementById("confirm-msg");
+    const yesBtn = document.querySelector("#confirm-overlay button[onclick='confirmYes()']");
+    const noBtn = document.querySelector("#confirm-overlay button[onclick='confirmNo()']");
+    msg.innerHTML = html;
+    yesBtn.textContent = "Schließen";
+    yesBtn.style.background = "var(--accent)";
+    yesBtn.style.color = "#0f172a";
+    noBtn.style.display = "none";
+    overlay.style.display = "flex";
+    // Override confirmYes to just close
+    window._catCheckOverride = true;
+    window._origConfirmYes = window.confirmYes;
+    window.confirmYes = function() {
+      overlay.style.display = "none";
+      noBtn.style.display = "";
+      yesBtn.textContent = "Bestätigen";
+      yesBtn.style.background = "#f87171";
+      yesBtn.style.color = "#fff";
+      window.confirmYes = window._origConfirmYes;
+    };
+  } catch(e) {
+    hideLoading();
+    console.error("Check error:", e);
+    showToast("❌ Fehler: " + e.message);
+  }
+}
+
 // ── Auth state observer ────────────────────────────────────────────
 auth.onAuthStateChanged(async function(user) {
   if (user) {
@@ -804,8 +917,6 @@ auth.onAuthStateChanged(async function(user) {
     if (logoutRow) logoutRow.style.display = "flex";
     hideLogin();
     try { await fsLoadAll(); } catch(e) { console.warn("Firestore load error:", e); showToast("⚠️ Cloud-Daten konnten nicht geladen werden"); }
-    // Migration: write built-in CATS to Firestore if not already there
-    await migrateCatsToFirestore();
     render();
   } else {
     currentUser = null;
@@ -1871,126 +1982,6 @@ function _deleteUserCatConfirmed(key) {
 // ── Burger menu ──
 function openBurger() {
   openSheet("burger-sheet");
-}
-
-async function openFirestoreCheck() {
-  openSheet("firestore-check-sheet");
-  const el = document.getElementById("firestore-check-content");
-  el.innerHTML = '<div style="padding:32px;text-align:center;color:var(--muted)">Wird geladen…</div>';
-
-  try {
-    // Load raw Firestore data
-    const settSnap = await db.collection("shared").doc("data").collection("settings").doc("config").get();
-    const txSnap   = await db.collection("shared").doc("data").collection("txs").get();
-
-    const fsData   = settSnap.exists ? settSnap.data() : {};
-    const fsCats   = fsData.userCats   || {};
-    const fsKws    = fsData.userKws    || {};
-    const fsTxCount = txSnap.docs.length;
-
-    // Compare with local CATS
-    const localCatKeys = Object.keys(CATS);
-    const fsCatKeys    = Object.keys(fsCats);
-
-    const missingInFs  = localCatKeys.filter(k => !fsCats[k]);
-    const onlyInFs     = fsCatKeys.filter(k => !CATS[k]);
-    const inBoth       = localCatKeys.filter(k => fsCats[k]);
-
-    // Build status rows
-    const statusColor = (ok) => ok ? "#4ade80" : "#f87171";
-    const tick = (ok) => ok ? "✅" : "❌";
-
-    let html = '<div style="padding:16px">';
-
-    // Summary
-    html += `<div style="background:var(--surface2);border-radius:12px;padding:14px 16px;margin-bottom:16px">
-      <div style="font-size:13px;color:var(--muted);margin-bottom:10px;text-transform:uppercase;letter-spacing:0.5px">Zusammenfassung</div>
-      <div style="display:flex;flex-direction:column;gap:8px;font-size:14px">
-        <div style="display:flex;justify-content:space-between"><span>Transaktionen in Firestore</span><span style="font-weight:700;color:${statusColor(fsTxCount>0)}">${fsTxCount}</span></div>
-        <div style="display:flex;justify-content:space-between"><span>Kategorien in Firestore</span><span style="font-weight:700;color:${statusColor(fsCatKeys.length>0)}">${fsCatKeys.length}</span></div>
-        <div style="display:flex;justify-content:space-between"><span>Kategorien lokal (CATS)</span><span style="font-weight:700">${localCatKeys.length}</span></div>
-        <div style="display:flex;justify-content:space-between"><span>Keywords in Firestore</span><span style="font-weight:700">${Object.values(fsKws).flat().length}</span></div>
-      </div>
-    </div>`;
-
-    // Missing in Firestore
-    if (missingInFs.length > 0) {
-      html += `<div style="background:#f8717118;border:1px solid #f8717144;border-radius:12px;padding:14px 16px;margin-bottom:16px">
-        <div style="font-size:13px;color:#f87171;font-weight:700;margin-bottom:8px">❌ Fehlen in Firestore (${missingInFs.length})</div>`;
-      missingInFs.forEach(k => {
-        const c = CATS[k];
-        html += `<div style="display:flex;align-items:center;gap:8px;padding:4px 0;font-size:13px">
-          <span style="width:24px;height:24px;border-radius:6px;background:${c.color}33;color:${c.color};display:flex;align-items:center;justify-content:center;font-size:14px">${c.icon}</span>
-          <span>${c.label}</span><span style="color:var(--muted);font-size:11px">(${k})</span>
-        </div>`;
-      });
-      html += '</div>';
-    }
-
-    // Only in Firestore (extra cats)
-    if (onlyInFs.length > 0) {
-      html += `<div style="background:#4ade8018;border:1px solid #4ade8044;border-radius:12px;padding:14px 16px;margin-bottom:16px">
-        <div style="font-size:13px;color:#4ade80;font-weight:700;margin-bottom:8px">☁️ Nur in Firestore (${onlyInFs.length})</div>`;
-      onlyInFs.forEach(k => {
-        const c = fsCats[k];
-        html += `<div style="display:flex;align-items:center;gap:8px;padding:4px 0;font-size:13px">
-          <span style="width:24px;height:24px;border-radius:6px;background:${c.color||"#94a3b8"}33;color:${c.color||"#94a3b8"};display:flex;align-items:center;justify-content:center;font-size:14px">${c.icon||"📦"}</span>
-          <span>${c.label||k}</span>
-        </div>`;
-      });
-      html += '</div>';
-    }
-
-    // In both
-    html += `<div style="background:var(--surface2);border-radius:12px;padding:14px 16px;margin-bottom:16px">
-      <div style="font-size:13px;color:var(--muted);font-weight:700;margin-bottom:8px">✅ Synchronisiert (${inBoth.length})</div>`;
-    inBoth.forEach(k => {
-      const local = CATS[k];
-      const fs    = fsCats[k];
-      const iconMatch  = local.icon  === fs.icon;
-      const colorMatch = local.color === fs.color;
-      const labelMatch = local.label === fs.label;
-      const allMatch   = iconMatch && colorMatch && labelMatch;
-      html += `<div style="display:flex;align-items:center;gap:8px;padding:5px 0;font-size:13px;border-bottom:1px solid var(--border)">
-        <span style="width:24px;height:24px;border-radius:6px;background:${local.color}33;color:${local.color};display:flex;align-items:center;justify-content:center;font-size:14px">${local.icon}</span>
-        <span style="flex:1">${local.label}</span>
-        <span style="font-size:11px;color:${allMatch?"#4ade80":"#fb923c"}">${allMatch ? "✓ ok" : "⚠️ diff"}</span>
-      </div>`;
-    });
-    html += '</div>';
-
-    // Fix button if anything missing
-    if (missingInFs.length > 0) {
-      html += `<button onclick="migrateAndRefreshCheck()" style="width:100%;padding:13px;border-radius:12px;border:none;background:#4ade80;color:#0f172a;font-size:15px;font-weight:700;cursor:pointer;margin-bottom:8px">
-        ☁️ Fehlende Kategorien jetzt speichern
-      </button>`;
-    } else {
-      html += `<div style="text-align:center;color:#4ade80;font-size:14px;padding:8px">✅ Alles synchronisiert</div>`;
-    }
-
-    html += '</div>';
-    el.innerHTML = html;
-
-  } catch(e) {
-    el.innerHTML = `<div style="padding:24px;color:#f87171;font-size:13px">Fehler: ${e.message}</div>`;
-  }
-}
-
-async function migrateAndRefreshCheck() {
-  const builtinKeys = Object.keys(CATS);
-  builtinKeys.forEach(function(k) {
-    if (!userCats[k] && CATS[k]) {
-      userCats[k] = { label: CATS[k].label, icon: CATS[k].icon, color: CATS[k].color, _user: true };
-    }
-  });
-  localStorage.setItem("finanzcheck_cats", JSON.stringify(userCats));
-  try {
-    await fsSaveSettings();
-    showToast("✅ Kategorien in Firestore gespeichert");
-    openFirestoreCheck(); // refresh
-  } catch(e) {
-    showToast("⚠️ Fehler beim Speichern: " + e.message);
-  }
 }
 
 function closeBurgerThen(fn) {
