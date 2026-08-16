@@ -94,16 +94,13 @@
 
     /* Burger button */
     .burger-btn {
-      display: flex; align-items: center; justify-content: center;
-      width: 38px; height: 38px; background: none;
-      border: none;
-      border-radius: 10px;
-      cursor: pointer; flex-shrink: 0;
-      font-size: 22px; color: var(--text);
-      line-height: 1;
+      display: flex; flex-direction: column; justify-content: center; gap: 5px;
+      width: 38px; height: 38px; background: var(--surface2);
+      border: 1px solid var(--border); border-radius: 10px;
+      cursor: pointer; padding: 8px 9px; flex-shrink: 0;
     }
     .burger-btn span {
-      display: block; height: 2px; width: 100%; background: var(--text);
+      display: block; height: 2px; background: var(--text);
       border-radius: 2px; transition: all .2s;
     }
     /* Burger menu sheet rows */
@@ -491,21 +488,21 @@
   <div style="font-size:48px;margin-bottom:16px">&#x1F4B0;</div>
   <div style="font-size:24px;font-weight:700;margin-bottom:6px">Finanzcheck</div>
   <div style="font-size:14px;color:var(--muted);margin-bottom:32px;text-align:center">Melde dich an um deine Finanzen zu sehen</div>
-  <div style="width:100%;max-width:340px;display:flex;flex-direction:column;gap:12px">
+  <form onsubmit="doLogin();return false;" style="width:100%;max-width:340px;display:flex;flex-direction:column;gap:12px">
     <input id="auth-email" type="email" placeholder="E-Mail" autocomplete="email"
       style="width:100%;background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:14px 16px;color:var(--text);font-size:16px;outline:none"
       onfocus="this.style.borderColor='var(--accent)'" onblur="this.style.borderColor='var(--border)'"
     />
-    <input id="auth-password" type="password" placeholder="Passwort" autocomplete="current-password" onkeydown="if(event.key==='Enter')doLogin()"
+    <input id="auth-password" type="password" placeholder="Passwort" autocomplete="current-password"
       style="width:100%;background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:14px 16px;color:var(--text);font-size:16px;outline:none"
       onfocus="this.style.borderColor='var(--accent)'" onblur="this.style.borderColor='var(--border)'"
     />
     <div id="auth-error" style="font-size:13px;color:var(--red);text-align:center;min-height:18px"></div>
-    <button type="button" id="login-btn" onclick="doLogin()"
+    <button type="submit" id="login-btn"
       style="width:100%;background:var(--accent);color:#0f172a;border:none;border-radius:12px;padding:14px;font-size:16px;font-weight:700;cursor:pointer">Anmelden</button>
     <button type="button" onclick="doRegister()"
       style="width:100%;background:transparent;border:1px solid var(--border);border-radius:12px;padding:12px;font-size:14px;color:var(--muted);cursor:pointer">Konto erstellen</button>
-  </div>
+  </form>
 </div>
 
 <div class="tabs-wrapper" style="display:none">
@@ -518,7 +515,12 @@
           <span style="font-size:22px">💰</span>
           <span class="app-title">Finanzcheck</span>
         </div>
-        <button class="burger-btn" onclick="openBurger()" aria-label="Menü"><span style="font-size:22px;color:var(--text);line-height:1">☰</span></button>
+        <button class="burger-btn" onclick="openBurger()" aria-label="Menü">
+          <span></span><span></span><span></span>
+        </button>
+      </div>
+
+      <!-- Account Switcher -->
       <div class="account-switcher" id="account-switcher-dash">
         <button class="account-btn active" id="acc-btn-all" onclick="setAccount('all')">
           Alle Konten
@@ -575,7 +577,9 @@
           <span style="font-size:22px">📈</span>
           <span class="app-title">Prognose</span>
         </div>
-        <button class="burger-btn" onclick="openBurger()" aria-label="Menü"><span style="font-size:22px;color:var(--text);line-height:1">☰</span></button>
+        <button class="burger-btn" onclick="openBurger()" aria-label="Menü">
+          <span></span><span></span><span></span>
+        </button>
       </div>
 
       <!-- Account Switcher (Prognose) -->
@@ -749,11 +753,10 @@ async function fsSaveSettings() {
 }
 
 // ── Auth state observer ────────────────────────────────────────────
-var authReady = false;
 auth.onAuthStateChanged(async function(user) {
   if (user) {
-    authReady = true;
     currentUser = user;
+    // Show logout row in burger menu
     var logoutRow = document.getElementById("burger-logout-row");
     if (logoutRow) logoutRow.style.display = "flex";
     hideLogin();
@@ -762,8 +765,7 @@ auth.onAuthStateChanged(async function(user) {
   } else {
     currentUser = null;
     allTxs = [];
-    // Only show login if auth was never confirmed — prevents iOS double-fire bug
-    if (!authReady) showLogin();
+    showLogin();
   }
 });
 
@@ -2395,6 +2397,7 @@ function renderPrognose() {
   `;
 }
 
+render();
 </script>
 </body>
 </html>
