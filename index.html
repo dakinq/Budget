@@ -732,7 +732,8 @@ async function fsLoadAll() {
     if (s.userCats)   { userCats   = s.userCats;   localStorage.setItem("finanzcheck_cats", JSON.stringify(userCats)); }
     if (s.eurToChf)   { eurToChf   = s.eurToChf;   localStorage.setItem("finanzcheck_eurChf", String(eurToChf)); }
   }
-  Object.entries(userCats).forEach(function(entry) { CATS[entry[0]] = Object.assign({}, entry[1], { _user: true }); });
+  // Rebuild CATS from loaded userCats
+  rebuildCats();
 }
 
 async function fsSaveTxs() {
@@ -757,16 +758,6 @@ async function fsSaveSettings() {
     });
   }
   if (!currentUser) return;
-  // Merge built-in CATS into userCats so everything is stored in Firestore
-  const allCatsToSave = {};
-  Object.entries(CATS).forEach(function([k, c]) {
-    allCatsToSave[k] = { label: c.label, icon: c.icon, color: c.color, _user: true };
-  });
-  Object.entries(userCats).forEach(function([k, c]) {
-    allCatsToSave[k] = c;
-  });
-  userCats = allCatsToSave;
-  localStorage.setItem("finanzcheck_cats", JSON.stringify(userCats));
   await db.collection("shared").doc("data").collection("settings").doc("config").set(
     { userKws: userKws, removedKws: removedKws, userCats: userCats, eurToChf: eurToChf }
   );
@@ -789,18 +780,10 @@ auth.onAuthStateChanged(async function(user) {
   }
 });
 
-// ── Kategorien ──
+// ── Kategorien — werden aus Firestore/localStorage geladen ──
 const CATS = {
-  lebensmittel: { label:"Lebensmittel", icon:"🛒", color:"#4ade80", kw:[] },
-  restaurant:   { label:"Restaurant",   icon:"🍽", color:"#fb923c", kw:[] },
-  transport:    { label:"Transport",    icon:"🚗", color:"#60a5fa", kw:[] },
-  shopping:     { label:"Shopping",     icon:"🛍", color:"#c084fc", kw:[] },
-  drogerie:     { label:"Drogerie",      icon:"🧴", color:"#2dd4bf", kw:[] },
-  medizin:      { label:"Ärzte / Medizin", icon:"🏥", color:"#f87171", kw:[] },
-  wohnen:       { label:"Wohnen",       icon:"🏠", color:"#fbbf24", kw:[] },
-  freizeit:     { label:"Freizeit",     icon:"🎉", color:"#a3e635", kw:[] },
-  sonstiges:       { label:"Sonstiges",         icon:"📦", color:"#94a3b8", kw:[] },
-  unkategorisiert: { label:"Nicht kategorisiert", icon:"❓", color:"#475569", kw:[] }
+  sonstiges:       { label:"Sonstiges",             icon:"📦", color:"#94a3b8", kw:[] },
+  unkategorisiert: { label:"Nicht kategorisiert",   icon:"❓", color:"#475569", kw:[] }
 };
 
 // ── Custom keywords ──
@@ -813,9 +796,7 @@ function saveRemovedKws(r) { localStorage.setItem("finanzcheck_removed_kws", JSO
 let removedKws = loadRemovedKws();
 
 function allKwsForCat(catKey) {
-  const removed = removedKws[catKey] || [];
-  const builtin = (CATS[catKey]?.kw || []).filter(w => !removed.includes(w));
-  return [...builtin, ...(userKws[catKey] || [])];
+  return [...(userKws[catKey] || [])];
 }
 function addUserKw(catKey, kw) {
   kw = kw.toLowerCase().trim(); if (!kw) return false;
@@ -830,34 +811,20 @@ function addUserKw(catKey, kw) {
   userKws[catKey].push(kw); saveUserKws(userKws); return true;
 }
 function removeUserKw(catKey, kw) {
-  const isBuiltIn = (CATS[catKey]?.kw || []).includes(kw);
-  if (isBuiltIn) {
-    if (!removedKws[catKey]) removedKws[catKey] = [];
-    if (!removedKws[catKey].includes(kw)) removedKws[catKey].push(kw);
-    saveRemovedKws(removedKws);
-  } else {
-    if (!userKws[catKey]) return;
-    userKws[catKey] = userKws[catKey].filter(k => k !== kw);
-    saveUserKws(userKws);
-  }
+  if (!userKws[catKey]) return;
+  userKws[catKey] = userKws[catKey].filter(k => k !== kw);
+  saveUserKws(userKws);
 }
 
 function loadUserCats() { try { return JSON.parse(localStorage.getItem("finanzcheck_cats") || "{}"); } catch { return {}; } }
 function saveUserCats(cats) { localStorage.setItem("finanzcheck_cats", JSON.stringify(cats)); fsSaveSettings().catch(function(e){console.warn("fs:",e); showToast("⚠️ Kategorie nicht in Cloud gespeichert");}); }
 let userCats = loadUserCats();
 function rebuildCats() {
-  // Remove only user-created (non-override) cats first
-  Object.keys(CATS).forEach(k => { if (CATS[k]._user && !CATS[k]._builtinOverride) delete CATS[k]; });
-  Object.entries(userCats).forEach(([k,c]) => {
-    if (c._builtinOverride && CATS[k]) {
-      // Update built-in cat properties without replacing it entirely
-      CATS[k].label = c.label;
-      CATS[k].icon  = c.icon;
-      CATS[k].color = c.color;
-      CATS[k]._builtinOverride = true;
-    } else if (!c._builtinOverride) {
-      CATS[k] = { ...c, _user: true, kw: [] };
-    }
+  // Remove all user-loaded cats first (keep sonstiges + unkategorisiert fallbacks)
+  Object.keys(CATS).forEach(k => { if (CATS[k]._user) delete CATS[k]; });
+  // Load all cats from userCats (which includes all cats migrated from Firestore)
+  Object.entries(userCats).forEach(([k, c]) => {
+    CATS[k] = { ...c, _user: true, kw: [] };
   });
 }
 rebuildCats();
@@ -1818,13 +1785,8 @@ function saveNewCat() {
     CATS[key].label = name;
     CATS[key].icon  = emoji;
     CATS[key].color = selectedColor;
-    // If it's a user-created cat, persist it
-    if (userCats[key]) {
-      userCats[key] = { ...userCats[key], label: name, icon: emoji, color: selectedColor };
-    } else {
-      // Built-in cat: save overrides in userCats so they survive reload
-      userCats[key] = { label: name, icon: emoji, color: selectedColor, _builtinOverride: true };
-    }
+    // Persist changes to userCats (all cats live in userCats now)
+    userCats[key] = { ...(userCats[key] || {}), label: name, icon: emoji, color: selectedColor, _user: true };
     saveUserCats(userCats);
     rebuildCats();
     closeAllSheets(); render(); renderSettings();
