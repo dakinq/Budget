@@ -367,6 +367,18 @@
   </div>
 </div>
 
+<!-- CATS CHECK MODAL -->
+<div id="cats-check-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:1200;align-items:flex-end;justify-content:center;">
+  <div style="background:var(--surface);border-radius:20px 20px 0 0;width:100%;max-width:480px;padding:20px 20px 32px;max-height:80vh;overflow-y:auto;">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">
+      <div style="font-size:16px;font-weight:700">🔍 Kategorien in Firestore</div>
+      <button onclick="closeCatsCheckModal()" style="background:none;border:none;color:var(--muted);font-size:24px;cursor:pointer;padding:0 4px;line-height:1">×</button>
+    </div>
+    <div id="cats-check-body"></div>
+    <button onclick="closeCatsCheckModal()" style="width:100%;margin-top:16px;background:var(--accent);color:#0f172a;border:none;border-radius:12px;padding:12px;font-size:15px;font-weight:700;cursor:pointer">Schließen</button>
+  </div>
+</div>
+
 <div id="kw-popup-overlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.55);z-index:1100;align-items:center;justify-content:center;" onclick="if(event.target===this)closeKwPopup(false)">
   <div style="background:var(--surface);border-radius:20px;padding:24px 20px;width:calc(100% - 48px);max-width:380px;box-shadow:0 8px 32px #0008;">
     <div style="font-size:15px;font-weight:700;margin-bottom:6px;color:var(--text)" id="kw-popup-title">Keyword speichern?</div>
@@ -809,31 +821,21 @@ const BUILTIN_CATS_SNAPSHOT = {
 
 async function migrateBuiltinCatsToFirestore() {
   if (!currentUser) { showToast("⚠️ Bitte zuerst anmelden"); return; }
-  showLoading("Kategorien werden hochgeladen…");
+  showLoading("Kategorien werden gespeichert…");
   try {
     const catsCol = db.collection("shared").doc("data").collection("builtinCats");
-    // Check if already migrated
-    const existing = await catsCol.get();
-    const existingKeys = existing.docs.map(d => d.id);
-    const toWrite = Object.entries(BUILTIN_CATS_SNAPSHOT).filter(([k]) => !existingKeys.includes(k));
-
-    if (toWrite.length === 0) {
-      hideLoading();
-      showToast("✅ Alle Kategorien bereits in Firestore vorhanden");
-      return;
-    }
-
+    // Write all directly — no pre-read, merge so existing keywords aren't wiped
     const batch = db.batch();
-    toWrite.forEach(function([key, cat]) {
-      batch.set(catsCol.doc(key), { ...cat, _builtin: true });
+    Object.entries(BUILTIN_CATS_SNAPSHOT).forEach(function([key, cat]) {
+      batch.set(catsCol.doc(key), { label: cat.label, icon: cat.icon, color: cat.color, kw: cat.kw, _builtin: true }, { merge: true });
     });
     await batch.commit();
     hideLoading();
-    showToast("✅ " + toWrite.length + " Kategorien in Firestore gespeichert");
+    showToast("✅ " + Object.keys(BUILTIN_CATS_SNAPSHOT).length + " Kategorien gespeichert");
   } catch(e) {
     hideLoading();
     console.error("Migration error:", e);
-    showToast("❌ Fehler: " + e.message);
+    showToast("❌ Fehler: " + (e.message || e.code || String(e)));
   }
 }
 
@@ -846,66 +848,34 @@ async function checkFirestoreCats() {
     hideLoading();
 
     const found = {};
-    snap.docs.forEach(d => { found[d.id] = d.data(); });
+    snap.docs.forEach(function(d) { found[d.id] = d.data(); });
     const builtinKeys = Object.keys(BUILTIN_CATS_SNAPSHOT);
-    const missingKeys = builtinKeys.filter(k => !found[k]);
-    const extraKeys = Object.keys(found).filter(k => !builtinKeys.includes(k));
+    const missingKeys = builtinKeys.filter(function(k) { return !found[k]; });
 
-    // Build result popup
-    let html = `<div style="font-size:15px;font-weight:700;margin-bottom:14px">🔍 Firestore Kategorien-Check</div>`;
-    html += `<div style="font-size:13px;color:var(--muted);margin-bottom:10px">Gespeichert: <b style="color:var(--green)">${snap.docs.length}</b> | Erwartet: <b>${builtinKeys.length}</b></div>`;
+    let rows = builtinKeys.map(function(k) {
+      const inFS = !!found[k];
+      const cat = BUILTIN_CATS_SNAPSHOT[k];
+      return '<div style="display:flex;align-items:center;gap:10px;padding:8px 12px;border-radius:10px;background:var(--surface2);margin-bottom:4px">'
+        + '<span style="font-size:18px">' + cat.icon + '</span>'
+        + '<span style="flex:1;font-size:13px;font-weight:500">' + cat.label + '</span>'
+        + '<span style="font-size:13px;font-weight:700;color:' + (inFS ? 'var(--green)' : 'var(--red)') + '">' + (inFS ? '✅' : '❌ fehlt') + '</span>'
+        + '</div>';
+    }).join('');
 
-    if (snap.docs.length === 0) {
-      html += `<div style="color:var(--red);font-size:13px;margin-bottom:10px">❌ Noch keine Kategorien in Firestore – bitte Migration ausführen.</div>`;
-    } else {
-      html += `<div style="display:flex;flex-direction:column;gap:6px;margin-bottom:12px">`;
-      builtinKeys.forEach(k => {
-        const inFS = !!found[k];
-        const cat = BUILTIN_CATS_SNAPSHOT[k];
-        html += `<div style="display:flex;align-items:center;gap:10px;padding:8px 12px;border-radius:10px;background:var(--surface2)">
-          <span style="font-size:18px">${cat.icon}</span>
-          <span style="flex:1;font-size:13px;font-weight:500">${cat.label}</span>
-          <span style="font-size:13px;font-weight:700;color:${inFS ? 'var(--green)' : 'var(--red)'}">${inFS ? '✅' : '❌ fehlt'}</span>
-        </div>`;
-      });
-      if (extraKeys.length > 0) {
-        html += `<div style="font-size:12px;color:var(--muted);margin-top:4px">+ ${extraKeys.length} extra: ${extraKeys.join(', ')}</div>`;
-      }
-      html += `</div>`;
-      if (missingKeys.length > 0) {
-        html += `<div style="color:var(--red);font-size:13px;margin-bottom:10px">⚠️ ${missingKeys.length} Kategorie(n) fehlen. Bitte Migration ausführen.</div>`;
-      } else {
-        html += `<div style="color:var(--green);font-size:13px;margin-bottom:10px">✅ Alle Kategorien vollständig in Firestore!</div>`;
-      }
-    }
+    let summary = missingKeys.length === 0
+      ? '<div style="color:var(--green);font-size:13px;margin-top:8px;font-weight:600">✅ Alle ' + builtinKeys.length + ' Kategorien vorhanden!</div>'
+      : '<div style="color:var(--red);font-size:13px;margin-top:8px;font-weight:600">⚠️ ' + missingKeys.length + ' fehlen — bitte Migration ausführen</div>';
 
-    // Show in a modal
-    const overlay = document.getElementById("confirm-overlay");
-    const msg = document.getElementById("confirm-msg");
-    const yesBtn = document.querySelector("#confirm-overlay button[onclick='confirmYes()']");
-    const noBtn = document.querySelector("#confirm-overlay button[onclick='confirmNo()']");
-    msg.innerHTML = html;
-    yesBtn.textContent = "Schließen";
-    yesBtn.style.background = "var(--accent)";
-    yesBtn.style.color = "#0f172a";
-    noBtn.style.display = "none";
-    overlay.style.display = "flex";
-    // Override confirmYes to just close
-    window._catCheckOverride = true;
-    window._origConfirmYes = window.confirmYes;
-    window.confirmYes = function() {
-      overlay.style.display = "none";
-      noBtn.style.display = "";
-      yesBtn.textContent = "Bestätigen";
-      yesBtn.style.background = "#f87171";
-      yesBtn.style.color = "#fff";
-      window.confirmYes = window._origConfirmYes;
-    };
+    document.getElementById("cats-check-body").innerHTML = rows + summary;
+    document.getElementById("cats-check-modal").style.display = "flex";
   } catch(e) {
     hideLoading();
     console.error("Check error:", e);
-    showToast("❌ Fehler: " + e.message);
+    showToast("❌ Fehler: " + (e.message || e.code || String(e)));
   }
+}
+function closeCatsCheckModal() {
+  document.getElementById("cats-check-modal").style.display = "none";
 }
 
 // ── Auth state observer ────────────────────────────────────────────
