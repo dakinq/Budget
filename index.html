@@ -655,7 +655,30 @@ const firebaseConfig = {
 firebase.initializeApp(firebaseConfig);
 const auth = firebase.auth();
 const db   = firebase.firestore();
+
+// Enable offline persistence (reads from local cache, syncs in background)
+db.enablePersistence({ synchronizeTabs: false }).catch(function(e) {
+  if (e.code === 'failed-precondition') {
+    console.warn('Persistence: mehrere Tabs offen, deaktiviert');
+  } else if (e.code === 'unimplemented') {
+    console.warn('Persistence: Browser unterstützt es nicht');
+  }
+});
+
 let currentUser = null;
+let _localLastModified = parseInt(localStorage.getItem('finanzcheck_lastmod') || '0', 10);
+
+async function fsUpdateLastModified() {
+  const ts = Date.now();
+  _localLastModified = ts;
+  localStorage.setItem('finanzcheck_lastmod', String(ts));
+  try {
+    await db.collection("shared").doc("meta").set({ lastModified: ts }, { merge: true });
+    fsLog('meta: lastModified aktualisiert', 'info');
+  } catch(e) {
+    fsLog('meta: FEHLER beim Update ' + (e.code || e.message), 'err');
+  }
+}
 
 // ── Auth UI ────────────────────────────────────────────────────────
 function showLogin() {
@@ -775,17 +798,30 @@ const DEFAULT_CATS = {
   unkategorisiert: { label:"Nicht kategorisiert",   icon:"❓", color:"#475569", kw:[] }
 };
 
-async function fsSaveCats() {
+async function fsSaveCats(changedKey) {
   if (!currentUser) { fsLog('fsSaveCats: kein User', 'err'); return; }
-  fsLog('fsSaveCats: starte (' + Object.keys(CATS).length + ' Kategorien)', 'info');
   try {
     const col = db.collection("shared").doc("data").collection("cats");
-    const batch = db.batch();
-    Object.entries(CATS).forEach(function([key, cat]) {
-      batch.set(col.doc(key), { label: cat.label, icon: cat.icon, color: cat.color, kw: cat.kw || [] });
-    });
-    await batch.commit();
+    if (changedKey && CATS[changedKey]) {
+      // Single cat update
+      fsLog('fsSaveCats: update "' + changedKey + '"', 'info');
+      const cat = CATS[changedKey];
+      await col.doc(changedKey).set({ label: cat.label, icon: cat.icon, color: cat.color, kw: cat.kw || [] });
+    } else if (changedKey === null) {
+      // Delete a cat
+      fsLog('fsSaveCats: delete "' + changedKey + '"', 'info');
+      await col.doc(changedKey).delete();
+    } else {
+      // Full write (first run / migration)
+      fsLog('fsSaveCats: Vollschreiben (' + Object.keys(CATS).length + ' Kategorien)', 'info');
+      const batch = db.batch();
+      Object.entries(CATS).forEach(function([key, cat]) {
+        batch.set(col.doc(key), { label: cat.label, icon: cat.icon, color: cat.color, kw: cat.kw || [] });
+      });
+      await batch.commit();
+    }
     fsLog('fsSaveCats: OK', 'ok');
+    await fsUpdateLastModified();
   } catch(e) {
     fsLog('fsSaveCats: FEHLER ' + (e.code || e.message), 'err');
     throw e;
@@ -794,21 +830,29 @@ async function fsSaveCats() {
 
 async function fsLoadAll() {
   fsLog('fsLoadAll: starte', 'info');
-  const txSnap = await db.collection("shared").doc("data").collection("txs").get();
-  const loaded = txSnap.docs.map(d => d.data());
-  if (loaded.length > 0) {
-    const localTxs = loadTxs();
-    loaded.forEach(function(t) {
-      const match = localTxs.find(function(l) {
-        return l.date === t.date && l.amount === t.amount && l.description === t.description;
-      });
-      if (match && match.ignored) t.ignored = true;
-    });
-    allTxs = loaded;
-    try { localStorage.setItem("finanzcheck_txs", JSON.stringify(allTxs)); } catch(e) {}
+
+  // ── Check lastModified: 1 Read to decide if full load needed ──
+  let needFullLoad = true;
+  try {
+    const metaSnap = await db.collection("shared").doc("meta").get();
+    if (metaSnap.exists) {
+      const serverTs = metaSnap.data().lastModified || 0;
+      if (serverTs <= _localLastModified && _localLastModified > 0) {
+        fsLog('fsLoadAll: kein Update seit letztem Login → localStorage', 'ok');
+        needFullLoad = false;
+      } else {
+        fsLog('fsLoadAll: Änderungen gefunden (server: ' + serverTs + ' lokal: ' + _localLastModified + ')', 'info');
+        _localLastModified = serverTs;
+        localStorage.setItem('finanzcheck_lastmod', String(serverTs));
+      }
+    } else {
+      fsLog('fsLoadAll: kein meta-Doc → erster Start', 'info');
+    }
+  } catch(e) {
+    fsLog('fsLoadAll: meta-Check Fehler ' + (e.code || e.message) + ' → lade trotzdem', 'err');
   }
 
-  // ── Load all cats from Firestore; seed defaults on first run ──
+  // ── Load cats always (small, needed for categorization) ──
   fsLog('fsLoadAll: lade cats', 'info');
   const catsSnap = await db.collection("shared").doc("data").collection("cats").get();
   if (catsSnap.empty) {
@@ -822,6 +866,30 @@ async function fsLoadAll() {
       CATS[d.id] = { label: data.label, icon: data.icon, color: data.color, kw: data.kw || [] };
     });
     fsLog('fsLoadAll: ' + catsSnap.docs.length + ' Kategorien geladen', 'ok');
+  }
+
+  // ── Load txs only if changed ──
+  if (needFullLoad) {
+    fsLog('fsLoadAll: lade Transaktionen', 'info');
+    const txSnap = await db.collection("shared").doc("data").collection("txs").get();
+    const loaded = txSnap.docs.map(d => d.data());
+    if (loaded.length > 0) {
+      const localTxs = loadTxs();
+      loaded.forEach(function(t) {
+        const match = localTxs.find(function(l) {
+          return l.date === t.date && l.amount === t.amount && l.description === t.description;
+        });
+        if (match && match.ignored) t.ignored = true;
+      });
+      allTxs = loaded;
+      try { localStorage.setItem("finanzcheck_txs", JSON.stringify(allTxs)); } catch(e) {}
+      fsLog('fsLoadAll: ' + allTxs.length + ' Transaktionen geladen', 'ok');
+    } else {
+      fsLog('fsLoadAll: keine Transaktionen in Firestore', 'info');
+    }
+  } else {
+    allTxs = loadTxs();
+    fsLog('fsLoadAll: ' + allTxs.length + ' Transaktionen aus localStorage', 'ok');
   }
 
   const settSnap = await db.collection("shared").doc("data").collection("settings").doc("config").get();
@@ -842,14 +910,14 @@ async function fsLoadAll() {
         });
       });
       if (changed) {
-        await fsSaveCats();
-        // Clear old userKws from settings so this only runs once
+        await fsSaveCats(); // full write: migration from old userKws
         await db.collection("shared").doc("data").collection("settings").doc("config").set(
           { eurToChf: eurToChf }, { merge: false }
         );
       }
     }
   }
+  fsLog('fsLoadAll: fertig', 'ok');
 }
 
 async function fsSaveTxs(changedIndices) {
@@ -871,6 +939,7 @@ async function fsSaveTxs(changedIndices) {
         saved += chunk.length;
         fsLog('fsSaveTxs: ' + saved + '/' + total + ' gespeichert', saved < total ? 'info' : 'ok');
       }
+      await fsUpdateLastModified();
     } catch(e) {
       fsLog('fsSaveTxs: FEHLER ' + (e.code || e.message), 'err');
       throw e;
@@ -897,6 +966,7 @@ async function fsSaveTxs(changedIndices) {
       fsLog('fsSaveTxs: chunk ' + Math.floor(i/CHUNK)+1 + ' OK', 'info');
     }
     fsLog('fsSaveTxs: Vollschreiben OK', 'ok');
+    await fsUpdateLastModified();
   } catch(e) {
     fsLog('fsSaveTxs: FEHLER ' + (e.code || e.message), 'err');
     throw e;
@@ -960,13 +1030,13 @@ function addUserKw(catKey, kw) {
   if (!CATS[catKey].kw) CATS[catKey].kw = [];
   if (CATS[catKey].kw.includes(kw)) return false;
   CATS[catKey].kw.push(kw);
-  fsSaveCats().catch(function(e){ showToast("⚠️ Keyword nicht gespeichert"); });
+  fsSaveCats(catKey).catch(function(e){ showToast("⚠️ Keyword nicht gespeichert"); });
   return true;
 }
 function removeUserKw(catKey, kw) {
   if (!CATS[catKey] || !CATS[catKey].kw) return;
   CATS[catKey].kw = CATS[catKey].kw.filter(function(k) { return k !== kw; });
-  fsSaveCats().catch(function(e){ showToast("⚠️ Keyword nicht gespeichert"); });
+  fsSaveCats(catKey).catch(function(e){ showToast("⚠️ Keyword nicht gespeichert"); });
 }
 
 // Word-boundary keyword match: "obi" matches "OBI ZÜRICH" but not "MOBILEZONE"
@@ -1928,7 +1998,7 @@ function saveNewCat() {
       CATS[key].icon  = emoji;
       CATS[key].color = selectedColor;
     }
-    fsSaveCats().catch(function(e){ showToast("⚠️ Kategorie nicht gespeichert"); });
+    fsSaveCats(key).catch(function(e){ showToast("⚠️ Kategorie nicht gespeichert"); });
     closeAllSheets(); render(); renderSettings();
     showToast(`✅ „${name}" gespeichert`);
     return;
@@ -1937,7 +2007,7 @@ function saveNewCat() {
   // CREATE mode
   const key = "custom_" + name.toLowerCase().replace(/\s+/g,"_").replace(/[^a-z0-9_]/g,"") + "_" + Date.now();
   CATS[key] = { label: name, icon: emoji, color: selectedColor, kw: [] };
-  fsSaveCats().catch(function(e){ showToast("⚠️ Kategorie nicht gespeichert"); });
+  fsSaveCats(key).catch(function(e){ showToast("⚠️ Kategorie nicht gespeichert"); });
   closeAllSheets(); render(); renderSettings();
   showToast(`✅ „${name}" erstellt`);
 }
@@ -1949,7 +2019,9 @@ function _deleteUserCatConfirmed(key) {
   allTxs.forEach(t => { if (t.category === key) t.category = "sonstiges"; });
   saveTxs();
   delete CATS[key];
-  fsSaveCats().catch(function(e){ showToast("⚠️ Kategorie nicht gespeichert"); });
+  db.collection("shared").doc("data").collection("cats").doc(key).delete()
+    .then(function() { return fsUpdateLastModified(); })
+    .catch(function(e){ fsLog('deleteCat FEHLER: ' + (e.code||e.message), 'err'); showToast("⚠️ Kategorie nicht gespeichert"); });
   render();
   closeAllSheets();
   setTimeout(() => { renderSettings(); openSheet("settings-sheet"); }, 300);
