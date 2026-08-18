@@ -1156,6 +1156,10 @@ function parseCSV(text) {
       desc = desc.replace(/^Debit Mobile Banking:\s*/i, "");
       // Strip "Debit Standing order: gemäss Auftrag Zahlung" / "Debit Standing order:"
       desc = desc.replace(/^Debit Standing order:\s*(gemäss Auftrag Zahlung\s*)?/i, "");
+      desc = desc.replace(/^Debit TWINT:\s*/i, "");
+      desc = desc.replace(/^Credit TWINT:\s*/i, "");
+      desc = desc.replace(/^Credit salary:\s*/i, "");
+      desc = desc.replace(/^Credit originator:\s*/i, "");
       zkbRef = (cols[4]||"").trim();
     } else if (isZKBde) {
       date = parseDate(cols[0]);
@@ -1167,6 +1171,10 @@ function parseCSV(text) {
       desc = desc.replace(/^Online purchase ZKB Visa Debit card [Nn]o\.? xxxx \d+[,]?\s*/i, "");
       desc = desc.replace(/^Debit Mobile Banking:\s*/i, "");
       desc = desc.replace(/^Debit Standing order:\s*(gemäss Auftrag Zahlung\s*)?/i, "");
+      desc = desc.replace(/^Debit TWINT:\s*/i, "");
+      desc = desc.replace(/^Credit TWINT:\s*/i, "");
+      desc = desc.replace(/^Credit salary:\s*/i, "");
+      desc = desc.replace(/^Credit originator:\s*/i, "");
       zkbRef = "";
     } else if (isSPK) {
       date = parseDate(cols[1]);
@@ -2107,7 +2115,7 @@ function render() {
   // Update year pill + render month chips
   const activeYear = activeMonth ? activeMonth.split("-")[0] : null;
   document.getElementById("year-pill-label").textContent = activeYear || "—";
-  const monthsInYear = activeYear ? months.filter(m => m.startsWith(activeYear)) : months;
+  const monthsInYear = (activeYear ? months.filter(m => m.startsWith(activeYear)) : months).slice().sort();
   const chipsBar = document.getElementById("month-chips-bar");
   chipsBar.innerHTML = monthsInYear.map(m => {
     const mo = parseInt(m.split("-")[1], 10);
@@ -2376,6 +2384,10 @@ function cleanZkbDesc(desc) {
   desc = desc.replace(/^Purchase ZKB Visa Debit card [Nn]o\.? xxxx \d+[,]?\s*/i, "");
   desc = desc.replace(/^Debit Mobile Banking:\s*/i, "");
   desc = desc.replace(/^Debit Standing order:\s*(gemäss Auftrag Zahlung\s*)?/i, "");
+  desc = desc.replace(/^Debit TWINT:\s*/i, "");
+  desc = desc.replace(/^Credit TWINT:\s*/i, "");
+  desc = desc.replace(/^Credit salary:\s*/i, "");
+  desc = desc.replace(/^Credit originator:\s*/i, "");
   return desc.trim();
 }
 
