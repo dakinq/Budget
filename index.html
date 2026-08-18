@@ -447,6 +447,15 @@
   <div class="sheet-scroll-inner" id="fslog-content" style="font-family:monospace;font-size:12px;padding:12px 16px;"></div>
 </div>
 
+<!-- PROGNOSE YEAR PICKER SHEET -->
+<div class="bottom-sheet" id="prog-year-picker-sheet">
+  <div class="sheet-handle" style="cursor:pointer" onclick="closeAllSheets()"></div>
+  <div class="sheet-header">
+    <span class="sheet-title">Jahr wählen</span>
+  </div>
+  <div id="prog-year-picker-list"></div>
+</div>
+
 <!-- YEAR PICKER SHEET -->
 <div class="bottom-sheet" id="year-picker-sheet">
   <div class="sheet-handle" style="cursor:pointer" onclick="closeAllSheets()"></div>
@@ -631,6 +640,12 @@
       </div>
 
       <div id="prognose-content">
+        <div class="month-picker-bar" style="padding-top:10px">
+          <button class="period-pill" id="prog-year-pill" onclick="openPrognoseYearPicker()" style="flex:0 0 auto;min-width:90px">
+            <span class="period-pill-label" id="prog-year-pill-label">—</span>
+            <span class="period-pill-chevron">▾</span>
+          </button>
+        </div>
         <div class="sec">
           <div class="sec-title" id="bar-chart-title">Monatsverlauf — Ausgaben</div>
           <div class="bar-wrap"><canvas id="bar-long" width="280" height="160" style="width:100%;height:auto"></canvas></div>
@@ -1135,6 +1150,12 @@ function parseCSV(text) {
       desc = (cols[1]||"").replace(/\s+/g," ").trim();
       // Strip ZKB card prefix: "Purchase ZKB Visa Debit card No. xxxx 1234[,] "
       desc = desc.replace(/^Purchase ZKB Visa Debit card [Nn]o\.? xxxx \d+[,]?\s*/i, "");
+      // Strip "Online purchase ZKB Visa Debit card no. xxxx 1234[,] "
+      desc = desc.replace(/^Online purchase ZKB Visa Debit card [Nn]o\.? xxxx \d+[,]?\s*/i, "");
+      // Strip "Debit Mobile Banking: "
+      desc = desc.replace(/^Debit Mobile Banking:\s*/i, "");
+      // Strip "Debit Standing order: gemäss Auftrag Zahlung" / "Debit Standing order:"
+      desc = desc.replace(/^Debit Standing order:\s*(gemäss Auftrag Zahlung\s*)?/i, "");
       zkbRef = (cols[4]||"").trim();
     } else if (isZKBde) {
       date = parseDate(cols[0]);
@@ -1142,6 +1163,10 @@ function parseCSV(text) {
       var cre2 = parseFloat((cols[3]||"0").replace(/['\s]/g,"").replace(",",".")) || 0;
       amount = cre2 > 0 ? cre2 : -deb2;
       desc = (cols[5]||cols[4]||"").replace(/\s+/g," ").trim();
+      // Strip ZKB DE boilerplate prefixes
+      desc = desc.replace(/^Online purchase ZKB Visa Debit card [Nn]o\.? xxxx \d+[,]?\s*/i, "");
+      desc = desc.replace(/^Debit Mobile Banking:\s*/i, "");
+      desc = desc.replace(/^Debit Standing order:\s*(gemäss Auftrag Zahlung\s*)?/i, "");
       zkbRef = "";
     } else if (isSPK) {
       date = parseDate(cols[1]);
@@ -2543,6 +2568,7 @@ addSwipeToClose("cat-picker", closeAllSheets);
 addSwipeToClose("burger-sheet", closeAllSheets);
 addSwipeToClose("year-picker-sheet", closeAllSheets);
 addSwipeToClose("month-picker-sheet", closeAllSheets);
+addSwipeToClose("prog-year-picker-sheet", closeAllSheets);
 addSwipeToClose("settings-sheet", closeAllSheets);
 addSwipeToClose("new-cat-sheet", closeNewCat);
 addSwipeToClose("cat-detail-sheet", closeAllSheets);
@@ -2550,20 +2576,49 @@ addSwipeToClose("ignored-sheet", closeAllSheets);
 
 // ── Prognose ──
 let activePrognoseCat = null;
+let activePrognoseYear = null;
 
 function selectPrognoseCat(key) {
   activePrognoseCat = activePrognoseCat === key ? null : key;
   renderPrognose();
 }
 
+function openPrognoseYearPicker() {
+  const txs = filteredTxs();
+  const allMonths = [...new Set(txs.map(t=>mk(t.date)))].sort();
+  const years = [...new Set(allMonths.map(m=>m.split("-")[0]))].sort().reverse();
+  document.getElementById("prog-year-picker-list").innerHTML = years.map(y => {
+    const isActive = y === activePrognoseYear;
+    return `<div class="period-pick-row${isActive ? " active" : ""}" onclick="selectPrognoseYear('${y}')">
+      <span>${y}</span>${isActive ? '<span class="period-pick-check">✓</span>' : ''}
+    </div>`;
+  }).join("");
+  openSheet("prog-year-picker-sheet");
+}
+
+function selectPrognoseYear(y) {
+  activePrognoseYear = y;
+  activePrognoseCat = null;
+  closeAllSheets();
+  renderPrognose();
+}
+
 function renderPrognose() {
   const txs = filteredTxs();
   const acc = activeAccount;
-  const months = [...new Set(txs.map(t=>mk(t.date)))].sort();
-  const hasEnough = months.length >= 2;
+  const allMonths = [...new Set(txs.map(t=>mk(t.date)))].sort();
+  const hasEnough = allMonths.length >= 2;
   document.getElementById("prognose-content").style.display = hasEnough ? "block" : "none";
   document.getElementById("prognose-empty").style.display = hasEnough ? "none" : "flex";
   if (!hasEnough) return;
+
+  // Set default year to latest available
+  const allYears = [...new Set(allMonths.map(m=>m.split("-")[0]))].sort().reverse();
+  if (!activePrognoseYear || !allYears.includes(activePrognoseYear)) activePrognoseYear = allYears[0];
+  document.getElementById("prog-year-pill-label").textContent = activePrognoseYear;
+
+  // Bar chart uses only months of the selected year
+  const months = allMonths.filter(m=>m.startsWith(activePrognoseYear));
 
   const exp = txs.filter(t=>t.amount<0);
   const inc = txs.filter(t=>t.amount>0);
@@ -2571,6 +2626,9 @@ function renderPrognose() {
   function normI(t) { return acc === "all" ? toChf(t.amount, t.bank) : t.amount; }
   const monthExp = months.map(m => exp.filter(t=>mk(t.date)===m).reduce((s,t)=>s+normE(t),0));
   const monthInc = months.map(m => inc.filter(t=>mk(t.date)===m).reduce((s,t)=>s+normI(t),0));
+  // Stats + forecast use all months for better averages
+  const allMonthExp = allMonths.map(m => exp.filter(t=>mk(t.date)===m).reduce((s,t)=>s+normE(t),0));
+  const allMonthInc = allMonths.map(m => inc.filter(t=>mk(t.date)===m).reduce((s,t)=>s+normI(t),0));
   const summAcc = acc === "all" ? "zkb" : acc;
   const allCatsMap = {...CATS};
   const allCatKeys = Object.keys(allCatsMap);
@@ -2609,9 +2667,9 @@ function renderPrognose() {
     }).join("");
   }
 
-  const avg = monthExp.reduce((s,v)=>s+v,0) / monthExp.length;
-  const avgInc = monthInc.reduce((s,v)=>s+v,0) / monthInc.length;
-  const trend = monthExp.length >= 2 ? monthExp[monthExp.length-1] - monthExp[monthExp.length-2] : 0;
+  const avg = allMonthExp.reduce((s,v)=>s+v,0) / allMonthExp.length;
+  const avgInc = allMonthInc.reduce((s,v)=>s+v,0) / allMonthInc.length;
+  const trend = allMonthExp.length >= 2 ? allMonthExp[allMonthExp.length-1] - allMonthExp[allMonthExp.length-2] : 0;
   const savingsRate = avgInc > 0 ? ((avgInc - avg) / avgInc * 100).toFixed(0) : "—";
 
   document.getElementById("prog-stats").innerHTML = `
@@ -2628,7 +2686,7 @@ function renderPrognose() {
   document.getElementById("cat-trend-list").innerHTML = topCats.map(({key})=>{
     const c = allCatsMap[key];
     if (!c) return "";
-    const vals = months.map(m => exp.filter(t=>mk(t.date)===m&&t.category===key).reduce((s,t)=>s+normE(t),0));
+    const vals = allMonths.map(m => exp.filter(t=>mk(t.date)===m&&t.category===key).reduce((s,t)=>s+normE(t),0));
     const catAvg = vals.reduce((s,v)=>s+v,0)/vals.length;
     const catTrend = vals.length>=2 ? vals[vals.length-1]-vals[vals.length-2] : 0;
     const isActive = activePrognoseCat === key;
@@ -2645,8 +2703,8 @@ function renderPrognose() {
     </div>`;
   }).join("");
 
-  const forecastExp = monthExp.length >= 3 ? monthExp.slice(-3).reduce((s,v)=>s+v,0)/3 : avg;
-  const forecastInc = monthInc.length >= 3 ? monthInc.slice(-3).reduce((s,v)=>s+v,0)/3 : avgInc;
+  const forecastExp = allMonthExp.length >= 3 ? allMonthExp.slice(-3).reduce((s,v)=>s+v,0)/3 : avg;
+  const forecastInc = allMonthInc.length >= 3 ? allMonthInc.slice(-3).reduce((s,v)=>s+v,0)/3 : avgInc;
   const forecastBal = forecastInc - forecastExp;
 
   document.getElementById("next-month-forecast").innerHTML = `
