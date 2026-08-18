@@ -2370,7 +2370,28 @@ function showImportReport(opts) {
 
 function triggerUpload(){ document.getElementById("csv-input").click(); }
 
+function cleanZkbDesc(desc) {
+  if (!desc) return desc;
+  desc = desc.replace(/^Online purchase ZKB Visa Debit card [Nn]o\.? xxxx \d+[,]?\s*/i, "");
+  desc = desc.replace(/^Purchase ZKB Visa Debit card [Nn]o\.? xxxx \d+[,]?\s*/i, "");
+  desc = desc.replace(/^Debit Mobile Banking:\s*/i, "");
+  desc = desc.replace(/^Debit Standing order:\s*(gemäss Auftrag Zahlung\s*)?/i, "");
+  return desc.trim();
+}
+
 function removeDuplicates() {
+  // 1. Clean ZKB boilerplate from existing descriptions
+  let cleaned = 0;
+  allTxs = allTxs.map(function(t) {
+    const newDesc = cleanZkbDesc(t.description);
+    if (newDesc !== t.description) {
+      cleaned++;
+      return Object.assign({}, t, { description: newDesc });
+    }
+    return t;
+  });
+
+  // 2. Remove duplicates (after cleaning, some may now match)
   const before = allTxs.length;
   const seen = new Set();
   allTxs = allTxs.filter(function(t) {
@@ -2380,14 +2401,18 @@ function removeDuplicates() {
     return true;
   });
   const removed = before - allTxs.length;
-  if (removed === 0) {
-    showToast("✅ Keine Duplikate gefunden");
+
+  if (cleaned === 0 && removed === 0) {
+    showToast("✅ Alles bereits sauber");
     return;
   }
   saveTxs();
   activeMonth = null; activeCat = null; activeView = null;
   render();
-  showToast("🧹 " + removed + " Duplikat" + (removed !== 1 ? "e" : "") + " entfernt");
+  const parts = [];
+  if (removed > 0) parts.push(removed + " Duplikat" + (removed !== 1 ? "e" : "") + " entfernt");
+  if (cleaned > 0) parts.push(cleaned + " Beschreibung" + (cleaned !== 1 ? "en" : "") + " bereinigt");
+  showToast("🧹 " + parts.join(", "));
 }
 
 function clearData(){
