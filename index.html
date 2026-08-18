@@ -277,7 +277,7 @@
       z-index: 101; transform: translateY(100%);
       transition: transform .3s cubic-bezier(.4,0,.2,1);
       max-height: 85vh; overflow-y: auto; padding-bottom: 16px;
-      touch-action: pan-y; /* pan-y allows vertical scroll & taps; 'none' breaks iOS keyboard on inputs */
+      touch-action: none; /* prevent background scroll */
     }
     .bottom-sheet.open { transform: translateY(0); }
     .sheet-handle { width: 36px; height: 4px; background: var(--border); border-radius: 2px; margin: 12px auto 0; }
@@ -421,6 +421,10 @@
     <div class="burger-row" onclick="closeBurgerThen(openFsLog)">
       <span class="burger-row-icon">📋</span>
       <span>Firestore Log</span>
+    </div>
+    <div class="burger-row" onclick="closeBurgerThen(forceFullSync)">
+      <span class="burger-row-icon">☁️</span>
+      <span>Alles zu Firestore hochladen</span>
     </div>
     <div class="burger-row" onclick="closeBurgerThen(removeDuplicates)">
       <span class="burger-row-icon">🧹</span>
@@ -1021,6 +1025,28 @@ async function fsSaveSettings() {
   );
 }
 
+async function forceFullSync() {
+  if (!currentUser) { showToast("⚠️ Nicht eingeloggt"); return; }
+  showLoading("☁️ Lade alles hoch…");
+  try {
+    fsLog('forceFullSync: starte', 'info');
+    await fsSaveCats();
+    fsLog('forceFullSync: Kategorien OK', 'ok');
+    await fsSaveTxs();
+    fsLog('forceFullSync: Transaktionen OK', 'ok');
+    await fsSaveSettings();
+    fsLog('forceFullSync: Einstellungen OK', 'ok');
+    await fsUpdateLastModified();
+    fsLog('forceFullSync: fertig', 'ok');
+    showToast("☁️ Alles hochgeladen");
+  } catch(e) {
+    fsLog('forceFullSync: FEHLER ' + (e.code || e.message), 'err');
+    showToast("❌ Upload fehlgeschlagen – Firestore Log prüfen");
+  } finally {
+    hideLoading();
+  }
+}
+
 // ── Loading helpers ───────────────────────────────────────────────
 function showLoading(msg) {
   document.getElementById("loading").style.display = "flex";
@@ -1442,7 +1468,7 @@ function setAccount(acc) {
     if(b1) b1.classList.toggle("active", a===acc);
     if(b2) b2.classList.toggle("active", a===acc);
   });
-  activeMonth = null; activeCat = null; activePrognoseCat = null;
+  activeMonth = null; activeCat = null; catStates = {};
   render();
   if (activeTab === 1) renderPrognose();
 }
@@ -1966,13 +1992,6 @@ function openNewCat() {
   document.querySelectorAll(".bottom-sheet").forEach(s=>s.classList.remove("open"));
   document.getElementById("backdrop").classList.add("open");
   document.getElementById("new-cat-sheet").classList.add("open");
-  // iOS: focus must be called in the same user-interaction tick to trigger the keyboard.
-  // We use a short delay to let the sheet animate into view first.
-  setTimeout(function() {
-    var nameInput = document.getElementById("new-cat-name-input");
-    nameInput.focus();
-    nameInput.click();
-  }, 350);
 }
 
 function openEditCat() {
@@ -1991,11 +2010,6 @@ function openEditCat() {
   document.querySelectorAll(".bottom-sheet").forEach(s=>s.classList.remove("open"));
   document.getElementById("backdrop").classList.add("open");
   document.getElementById("new-cat-sheet").classList.add("open");
-  setTimeout(function() {
-    var nameInput = document.getElementById("new-cat-name-input");
-    nameInput.focus();
-    nameInput.click();
-  }, 350);
 }
 
 function closeNewCat() {
@@ -2037,11 +2051,7 @@ function selectColor(c) {
     el.classList.toggle("selected", el.style.background===c || el.style.backgroundColor===c);
   });
 }
-function focusEmojiInput() {
-  var el = document.getElementById("new-cat-emoji-input");
-  el.focus();
-  el.click();
-}
+function focusEmojiInput() { document.getElementById("new-cat-emoji-input").focus(); }
 function updateEmojiPreview() {
   const val = document.getElementById("new-cat-emoji-input").value;
   document.getElementById("new-cat-emoji-preview").textContent = val || "✨";
@@ -2137,18 +2147,9 @@ function render() {
     const mo = parseInt(m.split("-")[1], 10);
     return `<button class="month-chip${m === activeMonth ? " active" : ""}" onclick="selMonth('${m}')">${MN[mo-1]}</button>`;
   }).join("");
-  // Scroll active chip into view — only scroll within the bar itself, never the page/tabs
+  // Scroll active chip into view
   const activeChip = chipsBar.querySelector(".month-chip.active");
-  if (activeChip) {
-    const chipLeft = activeChip.offsetLeft;
-    const chipWidth = activeChip.offsetWidth;
-    const barWidth = chipsBar.offsetWidth;
-    const ideal = chipLeft - (barWidth / 2) + (chipWidth / 2);
-    // Clamp to what the bar can actually scroll — avoids pulling the page sideways
-    const maxScroll = chipsBar.scrollWidth - barWidth;
-    const target = Math.max(0, Math.min(ideal, maxScroll));
-    chipsBar.scrollTo({ left: target, behavior: "smooth" });
-  }
+  if (activeChip) activeChip.scrollIntoView({inline:"center", behavior:"smooth", block:"nearest"});
 
   const mExp = exp.filter(t=>mk(t.date)===activeMonth);
   const mInc = inc.filter(t=>mk(t.date)===activeMonth);
@@ -2637,11 +2638,15 @@ addSwipeToClose("cat-detail-sheet", closeAllSheets);
 addSwipeToClose("ignored-sheet", closeAllSheets);
 
 // ── Prognose ──
-let activePrognoseCat = null;
+// catStates: key → "include" | "exclude" | undefined
+let catStates = {};
 let activePrognoseYear = null;
 
 function selectPrognoseCat(key) {
-  activePrognoseCat = activePrognoseCat === key ? null : key;
+  const cur = catStates[key];
+  if (!cur)            catStates[key] = "include";
+  else if (cur === "include") catStates[key] = "exclude";
+  else                 delete catStates[key];
   renderPrognose();
 }
 
@@ -2660,7 +2665,7 @@ function openPrognoseYearPicker() {
 
 function selectPrognoseYear(y) {
   activePrognoseYear = y;
-  activePrognoseCat = null;
+  catStates = {};
   closeAllSheets();
   renderPrognose();
 }
@@ -2696,38 +2701,48 @@ function renderPrognose() {
   const allCatKeys = Object.keys(allCatsMap);
   const barCanvas = document.getElementById("bar-long");
 
-  if (activePrognoseCat) {
-    const cat = allCatsMap[activePrognoseCat];
-    const catVals = months.map(m =>
-      exp.filter(t => mk(t.date) === m && t.category === activePrognoseCat).reduce((s,t) => s + normE(t), 0)
+  // Determine which categories to show based on catStates
+  const includedKeys = Object.keys(catStates).filter(k => catStates[k] === "include");
+  const excludedKeys = Object.keys(catStates).filter(k => catStates[k] === "exclude");
+  const hasFilter = includedKeys.length > 0 || excludedKeys.length > 0;
+
+  const catBarData = allCatKeys.map(k => {
+    const color = (allCatsMap[k] || {}).color || "#94a3b8";
+    const values = months.map(m =>
+      exp.filter(t => mk(t.date) === m && t.category === k).reduce((s,t) => s + normE(t), 0)
     );
-    drawStackedBar(barCanvas, months.map(m => ml(m).split(" ")[0]), [{ color: cat.color, values: catVals }], catVals);
-    document.getElementById("bar-chart-title").textContent = `${cat.icon} ${cat.label} — Monatsverlauf`;
-    document.getElementById("bar-legend").innerHTML =
-      `<button class="legend-back-btn" onclick="selectPrognoseCat(null)">← Alle Kategorien</button>`;
-  } else {
-    const catBarData = allCatKeys.map(k => {
-      const color = (allCatsMap[k] || {}).color || "#94a3b8";
-      const values = months.map(m =>
-        exp.filter(t => mk(t.date) === m && t.category === k).reduce((s,t) => s + normE(t), 0)
-      );
-      return { key: k, color, values };
-    }).filter(c => c.values.some(v => v > 0));
-    drawStackedBar(barCanvas, months.map(m => ml(m).split(" ")[0]), catBarData, monthExp);
-    document.getElementById("bar-chart-title").textContent = "Monatsverlauf — Ausgaben";
-    document.getElementById("bar-legend").innerHTML = catBarData.map(c => {
-      const cat = allCatsMap[c.key];
-      if (!cat) return "";
-      const isActive = activePrognoseCat === c.key;
-      return `<div
-        onclick="selectPrognoseCat('${c.key}')"
-        class="legend-chip${isActive ? ' active' : ''}"
-        style="color:${cat.color}${isActive ? ';background:' + cat.color + '18' : ''}">
-        <span class="legend-chip-dot" style="background:${cat.color}"></span>
-        <span class="legend-chip-label">${cat.icon} ${cat.label}</span>
-      </div>`;
-    }).join("");
+    return { key: k, color, values };
+  }).filter(c => c.values.some(v => v > 0));
+
+  // Filter bar data by catStates
+  let visibleCatData = catBarData;
+  if (includedKeys.length > 0) {
+    visibleCatData = catBarData.filter(c => includedKeys.includes(c.key));
+  } else if (excludedKeys.length > 0) {
+    visibleCatData = catBarData.filter(c => !excludedKeys.includes(c.key));
   }
+
+  const visibleTotals = months.map((m, i) => visibleCatData.reduce((s, c) => s + c.values[i], 0));
+  drawStackedBar(barCanvas, months.map(m => ml(m).split(" ")[0]), visibleCatData, visibleTotals);
+  document.getElementById("bar-chart-title").textContent = hasFilter
+    ? (includedKeys.length > 0 ? "Monatsverlauf — Auswahl" : "Monatsverlauf — Gefiltert")
+    : "Monatsverlauf — Ausgaben";
+
+  document.getElementById("bar-legend").innerHTML = catBarData.map(c => {
+    const cat = allCatsMap[c.key];
+    if (!cat) return "";
+    const state = catStates[c.key];
+    let border = "transparent", bg = "";
+    if (state === "include") { border = "var(--accent)"; bg = `background:${cat.color}22;`; }
+    if (state === "exclude") { border = "var(--red)"; bg = "background:rgba(239,68,68,0.08);"; }
+    return `<div
+      onclick="selectPrognoseCat('${c.key}')"
+      class="legend-chip"
+      style="${bg}border:2px solid ${border};color:${cat.color}">
+      <span class="legend-chip-dot" style="background:${cat.color}"></span>
+      <span class="legend-chip-label">${cat.icon} ${cat.label}</span>
+    </div>`;
+  }).join("");
 
   const avg = allMonthExp.reduce((s,v)=>s+v,0) / allMonthExp.length;
   const avgInc = allMonthInc.reduce((s,v)=>s+v,0) / allMonthInc.length;
@@ -2743,7 +2758,7 @@ function renderPrognose() {
 
   const topCats = Object.keys(allCatsMap).map(k=>({
     key:k, total: exp.filter(t=>t.category===k).reduce((s,t)=>s+normE(t),0)
-  })).sort((a,b)=>b.total-a.total).slice(0,8).filter(c=>c.total>0);
+  })).sort((a,b)=>b.total-a.total).filter(c=>c.total>0);
 
   document.getElementById("cat-trend-list").innerHTML = topCats.map(({key})=>{
     const c = allCatsMap[key];
@@ -2751,8 +2766,11 @@ function renderPrognose() {
     const vals = allMonths.map(m => exp.filter(t=>mk(t.date)===m&&t.category===key).reduce((s,t)=>s+normE(t),0));
     const catAvg = vals.reduce((s,v)=>s+v,0)/vals.length;
     const catTrend = vals.length>=2 ? vals[vals.length-1]-vals[vals.length-2] : 0;
-    const isActive = activePrognoseCat === key;
-    return `<div onclick="selectPrognoseCat('${key}')" style="padding:12px 16px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:12px;cursor:pointer;transition:background .15s;${isActive ? `background:${c.color}18;` : ""}">
+    const state = catStates[key];
+    let rowBg = "";
+    if (state === "include") rowBg = `background:${c.color}18;`;
+    if (state === "exclude") rowBg = "background:rgba(239,68,68,0.06);";
+    return `<div onclick="selectPrognoseCat('${key}')" style="padding:12px 16px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:12px;cursor:pointer;transition:background .15s;${rowBg}">
       <div style="width:36px;height:36px;border-radius:10px;background:${c.color}22;color:${c.color};display:flex;align-items:center;justify-content:center;font-size:18px;flex-shrink:0">${c.icon}</div>
       <div style="flex:1">
         <div style="font-size:14px;font-weight:600">${c.label}</div>
