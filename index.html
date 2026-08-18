@@ -2149,7 +2149,13 @@ function render() {
   }).join("");
   // Scroll active chip into view
   const activeChip = chipsBar.querySelector(".month-chip.active");
-  if (activeChip) activeChip.scrollIntoView({inline:"center", behavior:"smooth", block:"nearest"});
+  if (activeChip) {
+    const bar = chipsBar;
+    const chipLeft = activeChip.offsetLeft;
+    const chipWidth = activeChip.offsetWidth;
+    const barWidth = bar.offsetWidth;
+    bar.scrollLeft = chipLeft - (barWidth / 2) + (chipWidth / 2);
+  }
 
   const mExp = exp.filter(t=>mk(t.date)===activeMonth);
   const mInc = inc.filter(t=>mk(t.date)===activeMonth);
