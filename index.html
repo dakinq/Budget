@@ -406,6 +406,10 @@
       <span class="burger-row-icon">📋</span>
       <span>Firestore Log</span>
     </div>
+    <div class="burger-row" onclick="closeBurgerThen(removeDuplicates)">
+      <span class="burger-row-icon">🧹</span>
+      <span>Duplikate bereinigen</span>
+    </div>
     <div class="burger-row danger" onclick="closeBurgerThen(clearData)">
       <span class="burger-row-icon">🗑</span>
       <span>Alle Daten löschen</span>
@@ -2257,11 +2261,12 @@ async function handleFile(file) {
     showErrorToast("Keine Buchungen gefunden", dataLines===0 ? "Die Datei enthält nur die Kopfzeile." : dataLines + " Zeilen gefunden, aber keine lesbare Buchung."); return;
   }
 
-  const dupes = newTxs.filter(function(t) {
-    return allTxs.some(function(e) { return e.date===t.date && e.amount===t.amount && e.description===t.description; });
-  }).length;
+  const uniqueTxs = newTxs.filter(function(t) {
+    return !allTxs.some(function(e) { return e.date===t.date && e.amount===t.amount && e.description===t.description; });
+  });
+  const dupes = newTxs.length - uniqueTxs.length;
 
-  allTxs = allTxs.concat(newTxs);
+  allTxs = allTxs.concat(uniqueTxs);
   saveTxs();
   activeMonth=null; activeCat=null; activeView=null;
   render();
@@ -2335,6 +2340,26 @@ function showImportReport(opts) {
 }
 
 function triggerUpload(){ document.getElementById("csv-input").click(); }
+
+function removeDuplicates() {
+  const before = allTxs.length;
+  const seen = new Set();
+  allTxs = allTxs.filter(function(t) {
+    const key = t.date + "|" + t.amount + "|" + (t.description || "");
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+  const removed = before - allTxs.length;
+  if (removed === 0) {
+    showToast("✅ Keine Duplikate gefunden");
+    return;
+  }
+  saveTxs();
+  activeMonth = null; activeCat = null; activeView = null;
+  render();
+  showToast("🧹 " + removed + " Duplikat" + (removed !== 1 ? "e" : "") + " entfernt");
+}
 
 function clearData(){
   showConfirm("Alle Buchungen löschen? Diese Aktion kann nicht rückgängig gemacht werden.", function() {
