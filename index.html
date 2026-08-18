@@ -2137,9 +2137,18 @@ function render() {
     const mo = parseInt(m.split("-")[1], 10);
     return `<button class="month-chip${m === activeMonth ? " active" : ""}" onclick="selMonth('${m}')">${MN[mo-1]}</button>`;
   }).join("");
-  // Scroll active chip into view
+  // Scroll active chip into view — only scroll within the bar itself, never the page/tabs
   const activeChip = chipsBar.querySelector(".month-chip.active");
-  if (activeChip) activeChip.scrollIntoView({inline:"center", behavior:"smooth", block:"nearest"});
+  if (activeChip) {
+    const chipLeft = activeChip.offsetLeft;
+    const chipWidth = activeChip.offsetWidth;
+    const barWidth = chipsBar.offsetWidth;
+    const ideal = chipLeft - (barWidth / 2) + (chipWidth / 2);
+    // Clamp to what the bar can actually scroll — avoids pulling the page sideways
+    const maxScroll = chipsBar.scrollWidth - barWidth;
+    const target = Math.max(0, Math.min(ideal, maxScroll));
+    chipsBar.scrollTo({ left: target, behavior: "smooth" });
+  }
 
   const mExp = exp.filter(t=>mk(t.date)===activeMonth);
   const mInc = inc.filter(t=>mk(t.date)===activeMonth);
