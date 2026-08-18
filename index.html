@@ -118,10 +118,10 @@
 
     /* Month/Year picker bar */
     .month-picker-bar {
-      display: flex; gap: 8px; padding: 8px 16px;
+      display: flex; gap: 8px; padding: 8px 16px 4px;
     }
     .period-pill {
-      flex: 1; display: flex; align-items: center; justify-content: space-between;
+      display: flex; align-items: center; justify-content: space-between;
       background: var(--surface); border: 1px solid var(--border); border-radius: 12px;
       color: var(--text); padding: 9px 14px; font-size: 14px; font-weight: 600;
       cursor: pointer; gap: 6px;
@@ -129,6 +129,22 @@
     .period-pill:active { background: var(--surface2); }
     .period-pill-label { flex: 1; text-align: left; }
     .period-pill-chevron { color: var(--muted); font-size: 12px; }
+    /* Month chips */
+    .month-chips-bar {
+      display: flex; gap: 8px; padding: 4px 16px 10px;
+      overflow-x: auto; scrollbar-width: none;
+    }
+    .month-chips-bar::-webkit-scrollbar { display: none; }
+    .month-chip {
+      flex: 0 0 auto; padding: 7px 14px; border-radius: 20px;
+      border: 1px solid var(--border); background: var(--surface);
+      color: var(--text); font-size: 13px; font-weight: 600; cursor: pointer;
+      white-space: nowrap; transition: background 0.15s;
+    }
+    .month-chip:active { background: var(--surface2); }
+    .month-chip.active {
+      background: var(--accent); color: #0f172a; border-color: var(--accent);
+    }
     /* Period picker sheet list */
     .period-pick-row {
       display: flex; align-items: center; justify-content: space-between;
@@ -561,15 +577,12 @@
       </div>
 
       <div class="month-picker-bar">
-        <button class="period-pill" id="year-pill" onclick="openYearPicker()">
+        <button class="period-pill" id="year-pill" onclick="openYearPicker()" style="flex:0 0 auto;min-width:90px">
           <span class="period-pill-label" id="year-pill-label">—</span>
           <span class="period-pill-chevron">▾</span>
         </button>
-        <button class="period-pill" id="month-pill" onclick="openMonthPicker()">
-          <span class="period-pill-label" id="month-pill-label">—</span>
-          <span class="period-pill-chevron">▾</span>
-        </button>
       </div>
+      <div class="month-chips-bar" id="month-chips-bar"></div>
 
       <div class="cards">
         <div class="card" id="card-exp" onclick="toggleView('exp')" style="cursor:pointer"><div class="card-label">Ausgaben</div><div class="card-val red" id="c-exp">—</div></div>
@@ -2066,12 +2079,18 @@ function render() {
   if (!activeMonth && months.length) activeMonth = months[0];
   if (months.length && !months.includes(activeMonth)) activeMonth = months[0];
 
-  // Update year/month pills
+  // Update year pill + render month chips
   const activeYear = activeMonth ? activeMonth.split("-")[0] : null;
-  const activeMonthNum = activeMonth ? activeMonth.split("-")[1] : null;
   document.getElementById("year-pill-label").textContent = activeYear || "—";
-  document.getElementById("month-pill-label").textContent =
-    activeMonthNum ? MN[parseInt(activeMonthNum, 10) - 1] : "—";
+  const monthsInYear = activeYear ? months.filter(m => m.startsWith(activeYear)) : months;
+  const chipsBar = document.getElementById("month-chips-bar");
+  chipsBar.innerHTML = monthsInYear.map(m => {
+    const mo = parseInt(m.split("-")[1], 10);
+    return `<button class="month-chip${m === activeMonth ? " active" : ""}" onclick="selMonth('${m}')">${MN[mo-1]}</button>`;
+  }).join("");
+  // Scroll active chip into view
+  const activeChip = chipsBar.querySelector(".month-chip.active");
+  if (activeChip) activeChip.scrollIntoView({inline:"center", behavior:"smooth", block:"nearest"});
 
   const mExp = exp.filter(t=>mk(t.date)===activeMonth);
   const mInc = inc.filter(t=>mk(t.date)===activeMonth);
@@ -2195,22 +2214,7 @@ function selectYear(y) {
   render();
 }
 
-function openMonthPicker() {
-  const txs = filteredTxs();
-  const months = [...new Set(txs.map(t => mk(t.date)))].sort().reverse();
-  const activeYear = activeMonth ? activeMonth.split("-")[0] : null;
-  // Show only months for the active year
-  const monthsInYear = activeYear ? months.filter(m => m.startsWith(activeYear)) : months;
-  document.getElementById("month-picker-list").innerHTML = monthsInYear.map(m => {
-    const isActive = m === activeMonth;
-    const [y, mo] = m.split("-");
-    return `<div class="period-pick-row${isActive ? " active" : ""}" onclick="selMonth('${m}');closeAllSheets()">
-      <span>${MN[parseInt(mo, 10) - 1]} ${y}</span>
-      ${isActive ? '<span class="period-pick-check">✓</span>' : ''}
-    </div>`;
-  }).join("");
-  openSheet("month-picker-sheet");
-}
+
 function selCat(k){ activeCat=activeCat===k?null:k; activeView=null; render(); }
 function toggleView(v){ activeView = activeView===v ? null : v; activeCat=null; render(); }
 
