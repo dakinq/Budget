@@ -277,7 +277,7 @@
       z-index: 101; transform: translateY(100%);
       transition: transform .3s cubic-bezier(.4,0,.2,1);
       max-height: 85vh; overflow-y: auto; padding-bottom: 16px;
-      touch-action: none; /* prevent background scroll */
+      touch-action: pan-y; /* pan-y allows vertical scroll & taps; 'none' breaks iOS keyboard on inputs */
     }
     .bottom-sheet.open { transform: translateY(0); }
     .sheet-handle { width: 36px; height: 4px; background: var(--border); border-radius: 2px; margin: 12px auto 0; }
@@ -1966,6 +1966,13 @@ function openNewCat() {
   document.querySelectorAll(".bottom-sheet").forEach(s=>s.classList.remove("open"));
   document.getElementById("backdrop").classList.add("open");
   document.getElementById("new-cat-sheet").classList.add("open");
+  // iOS: focus must be called in the same user-interaction tick to trigger the keyboard.
+  // We use a short delay to let the sheet animate into view first.
+  setTimeout(function() {
+    var nameInput = document.getElementById("new-cat-name-input");
+    nameInput.focus();
+    nameInput.click();
+  }, 350);
 }
 
 function openEditCat() {
@@ -1984,6 +1991,11 @@ function openEditCat() {
   document.querySelectorAll(".bottom-sheet").forEach(s=>s.classList.remove("open"));
   document.getElementById("backdrop").classList.add("open");
   document.getElementById("new-cat-sheet").classList.add("open");
+  setTimeout(function() {
+    var nameInput = document.getElementById("new-cat-name-input");
+    nameInput.focus();
+    nameInput.click();
+  }, 350);
 }
 
 function closeNewCat() {
@@ -2025,7 +2037,11 @@ function selectColor(c) {
     el.classList.toggle("selected", el.style.background===c || el.style.backgroundColor===c);
   });
 }
-function focusEmojiInput() { document.getElementById("new-cat-emoji-input").focus(); }
+function focusEmojiInput() {
+  var el = document.getElementById("new-cat-emoji-input");
+  el.focus();
+  el.click();
+}
 function updateEmojiPreview() {
   const val = document.getElementById("new-cat-emoji-input").value;
   document.getElementById("new-cat-emoji-preview").textContent = val || "✨";
