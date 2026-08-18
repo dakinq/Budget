@@ -2150,11 +2150,25 @@ function render() {
   // Scroll active chip into view
   const activeChip = chipsBar.querySelector(".month-chip.active");
   if (activeChip) {
-    const bar = chipsBar;
-    const chipLeft = activeChip.offsetLeft;
-    const chipWidth = activeChip.offsetWidth;
-    const barWidth = bar.offsetWidth;
-    bar.scrollLeft = chipLeft - (barWidth / 2) + (chipWidth / 2);
+    setTimeout(function() {
+      const allChips = Array.from(chipsBar.querySelectorAll(".month-chip"));
+      const idx = allChips.indexOf(activeChip);
+      const isFirst = idx === 0;
+      const isLast = idx === allChips.length - 1;
+      const barWidth = chipsBar.offsetWidth;
+      const maxScroll = chipsBar.scrollWidth - barWidth;
+
+      if (isFirst) {
+        chipsBar.scrollLeft = 0;
+      } else if (isLast) {
+        chipsBar.scrollLeft = maxScroll;
+      } else {
+        const chipLeft = activeChip.offsetLeft;
+        const chipWidth = activeChip.offsetWidth;
+        const scrollTarget = chipLeft - (barWidth / 2) + (chipWidth / 2);
+        chipsBar.scrollLeft = Math.max(0, Math.min(scrollTarget, maxScroll));
+      }
+    }, 50);
   }
 
   const mExp = exp.filter(t=>mk(t.date)===activeMonth);
